@@ -50,6 +50,7 @@ endif()
         '''    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSDynamicLoader.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSStaticRegistry.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSPlatformState.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSDiagnostics.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSEngineStartup.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLGLProcAddress.cpp
