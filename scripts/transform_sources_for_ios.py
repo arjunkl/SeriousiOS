@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 ENCOUNTERS = ("TFE", "TSE")
@@ -20,12 +21,19 @@ def replace_exact(path: Path, old: str, new: str, expected: int = 1) -> int:
     return count
 
 
-def replace_one_or_more(path: Path, old: str, new: str) -> int:
+def disable_armv7_neon_on_ios(path: Path) -> int:
     text = path.read_text(encoding="utf-8")
-    count = text.count(old)
+    pattern = re.compile(
+        r"(?m)^(#if\s+defined(?:\s+|\()__ARM_NEON__\)?"
+        r"\s*&&\s*!defined(?:\s+|\()PLATFORM_MACOSX\)?)"
+        r"(?![^\n]*PLATFORM_IOS)"
+    )
+    updated, count = pattern.subn(r"\1 && !defined PLATFORM_IOS", text)
     if count < 1:
-        raise RuntimeError(f"{path}: expected at least one occurrence of {old!r}")
-    path.write_text(text.replace(old, new), encoding="utf-8")
+        raise RuntimeError(
+            f"{path}: expected at least one ARM NEON/macOS guard to adapt"
+        )
+    path.write_text(updated, encoding="utf-8")
     return count
 
 
@@ -54,17 +62,12 @@ def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
         "#if (!defined __INTEL_COMPILER) && (!defined PLATFORM_MACOSX) && (!defined PLATFORM_IOS)",
     )
 
-    neon_old = "#if defined __ARM_NEON__ && !defined PLATFORM_MACOSX"
-    neon_new = (
-        "#if defined __ARM_NEON__ && !defined PLATFORM_MACOSX "
-        "&& !defined PLATFORM_IOS"
-    )
     for relative in (
         "Engine/World/WorldRayCasting.cpp",
         "Engine/Models/RenderModel_View.cpp",
     ):
         path = root / relative
-        counts[relative] = replace_one_or_more(path, neon_old, neon_new)
+        counts[relative] = disable_armv7_neon_on_ios(path)
 
     return counts
 
