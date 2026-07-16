@@ -21,6 +21,10 @@ const char* SeriousIOS_ApplicationGetError(void);
 void SeriousIOS_ApplicationSetStage(const char* stage);
 const char* SeriousIOS_ApplicationGetStage(void);
 
+// Called from the iOS ErrorReporting transform after the legacy FatalError
+// message has been formatted but before it terminates the process.
+void SeriousIOS_ApplicationRecordFatalError(const char* message);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
