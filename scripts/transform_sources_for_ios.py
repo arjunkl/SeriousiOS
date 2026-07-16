@@ -45,6 +45,19 @@ def disable_armv7_neon_on_ios(path: Path) -> int:
     return count
 
 
+def emit_shader_math_helpers(path: Path) -> int:
+    replacements = (
+        ("inline void MatrixVectorToMatrix12(", "void MatrixVectorToMatrix12("),
+        ("inline void TransformVertex(", "void TransformVertex("),
+        ("inline void RotateVector(", "void RotateVector("),
+        ("inline void MatrixTranspose(", "void MatrixTranspose("),
+    )
+    changed = 0
+    for old, new in replacements:
+        changed += replace_exact(path, old, new)
+    return changed
+
+
 def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
     root = upstream / f"Sam{encounter}" / "Sources"
     if not root.is_dir():
@@ -83,6 +96,9 @@ def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
     ):
         path = root / relative
         counts[relative] = disable_armv7_neon_on_ios(path)
+
+    rm_render = root / "Engine/Ska/RMRender.cpp"
+    counts["shader_math_exports"] = emit_shader_math_helpers(rm_render)
 
     return counts
 
