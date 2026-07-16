@@ -18,7 +18,7 @@ permissions:
 jobs:
   build-generate-configure-and-compile:
     runs-on: macos-15
-    timeout-minutes: 85
+    timeout-minutes: 90
     steps:
       - name: Checkout SeriousiOS
         uses: actions/checkout@v4
@@ -37,6 +37,7 @@ jobs:
           bash -n scripts/apply_upstream_patches.sh
           bash -n scripts/build_ios_runtime_archives.sh
           bash -n scripts/dry_link_ios_runtime.sh
+          bash -n scripts/build_ios_uikit_host.sh
           python3 -m py_compile scripts/report_dependency_graph.py
           python3 -m py_compile scripts/generate_static_entity_registry.py
           python3 -m py_compile scripts/generate_static_runtime_registry.py
@@ -212,7 +213,7 @@ jobs:
           done
           exit "$overall_status"
 
-      - name: Force-load each encounter and report final link closure
+      - name: Force-load each encounter and require static link closure
         shell: bash
         run: |
           set -uo pipefail
@@ -242,7 +243,21 @@ jobs:
               --status-file "$link_status"
           done
 
-      - name: Upload architecture, generation, compilation, and link evidence
+      - name: Build UIKit and EAGL host shells
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/uikit-evidence
+          for encounter in TFE TSE; do
+            bash scripts/build_ios_uikit_host.sh \
+              "build/cmake-model/${encounter}" \
+              "$encounter" \
+              "build/static-registries/SeriousIOS${encounter}EntityRegistry.cpp" \
+              "build/static-registries/SeriousIOS${encounter}RuntimeRegistry.cpp" \
+              build/uikit-evidence
+          done
+
+      - name: Upload architecture, generation, compilation, link, and UIKit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -270,5 +285,6 @@ jobs:
             build/cmake-model/TSE/SeriousEngine.xcodeproj/project.pbxproj
             build/archive-evidence
             build/link-evidence
+            build/uikit-evidence
           if-no-files-found: warn
           retention-days: 14
