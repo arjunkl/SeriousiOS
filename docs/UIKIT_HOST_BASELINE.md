@@ -6,6 +6,7 @@
 - Pinned SeriousSamClassic revision: `80b9893e5b74e5a2160eaf63e6d6b3f3981dfbbd`
 - Target: `arm64-apple-ios15.0`
 - Build products: unsigned `.app` and `.ipa` host shells for TFE and TSE
+- Runtime prerequisite: strict no-dead-strip static closure passed for both encounters
 
 ## Product results
 
