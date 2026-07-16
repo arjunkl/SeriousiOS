@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -103,8 +104,25 @@ def transform_opengles1(text: str) -> str:
             @"SeriousiOS %@\\nOpenGL ES 1.1 compatibility validation failed\\n%s",
             kEncounterName,
             SeriousIOS_GetOpenGLCompatibilityError()];
+        SeriousIOS_DiagnosticsLog(
+            "graphics",
+            "compatibility_validation_failed error=%s",
+            SeriousIOS_GetOpenGLCompatibilityError());
         return;
     }
+
+    const GLubyte* glVersion = glGetString(GL_VERSION);
+    const GLubyte* glRenderer = glGetString(GL_RENDERER);
+    const GLubyte* glVendor = glGetString(GL_VENDOR);
+    SeriousIOS_DiagnosticsLog(
+        "graphics",
+        "context version=%s renderer=%s vendor=%s drawable=%dx%d scale=%.3f",
+        glVersion == nullptr ? "unknown" : reinterpret_cast<const char*>(glVersion),
+        glRenderer == nullptr ? "unknown" : reinterpret_cast<const char*>(glRenderer),
+        glVendor == nullptr ? "unknown" : reinterpret_cast<const char*>(glVendor),
+        _drawableWidth,
+        _drawableHeight,
+        self.contentScaleFactor);
 
     glViewport(0, 0, _drawableWidth, _drawableHeight);'''
     text = replace_once(
@@ -134,6 +152,7 @@ def diagnostic_startup_methods() -> str:
         _launchButton.hidden = NO;
         _importButton.hidden = NO;
         [_importButton setTitle:@"Re-import original .gro files" forState:UIControlStateNormal];
+        SeriousIOS_DiagnosticsLog("host", "original_game_data_found sentinel=%s", kRequiredGameDataSentinel.UTF8String);
         return;
     }
 
@@ -151,6 +170,7 @@ def diagnostic_startup_methods() -> str:
                 kEncounterName];
             self->_importButton.hidden = NO;
             [self refreshImportedGameDataStatus];
+            SeriousIOS_DiagnosticsLog("engine", "core_checkpoint_passed encounter=%s", kEncounterName.UTF8String);
             NSLog(@"SeriousiOS core engine checkpoint passed for %@", kEncounterName);
             return;
         }
@@ -164,6 +184,7 @@ def diagnostic_startup_methods() -> str:
             kEncounterName,
             errorText];
         self->_importButton.hidden = YES;
+        SeriousIOS_DiagnosticsLog("engine", "core_checkpoint_failed error=%s", errorText.UTF8String);
         NSLog(@"SeriousiOS core engine startup failed for %@: %@", kEncounterName, errorText);
     });
 }
@@ -194,6 +215,7 @@ def diagnostic_startup_methods() -> str:
     _startupLabel.text = [NSString stringWithFormat:
         @"SeriousiOS %@\nArming staged startup diagnostics…",
         kEncounterName];
+    SeriousIOS_DiagnosticsLog("host", "diagnostic_launch_requested");
 
     dispatch_after(
         dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)),
@@ -216,6 +238,7 @@ def diagnostic_startup_methods() -> str:
         _launchButton.hidden = YES;
         _importButton.hidden = YES;
         [self startApplicationFrameLoop];
+        SeriousIOS_DiagnosticsLog("host", "application_frame_loop_scheduled fps=60");
         NSLog(@"SeriousiOS application lifecycle initialized for %@", kEncounterName);
         return;
     }
@@ -233,6 +256,11 @@ def diagnostic_startup_methods() -> str:
     _launchButton.hidden = YES;
     _importButton.enabled = NO;
     _importButton.hidden = YES;
+    SeriousIOS_DiagnosticsLog(
+        "host",
+        "application_startup_failed stage=%s error=%s",
+        SeriousIOS_ApplicationGetStage(),
+        errorText.UTF8String);
     NSLog(@"SeriousiOS application startup failed for %@ at %s: %@",
         kEncounterName,
         SeriousIOS_ApplicationGetStage(),
@@ -240,8 +268,85 @@ def diagnostic_startup_methods() -> str:
 }'''
 
 
-def transform(path: Path) -> None:
+def export_method() -> str:
+    return r'''- (void)exportDiagnostics {
+    SeriousIOS_DiagnosticsWriteSummary("manual-export");
+    SeriousIOS_DiagnosticsFlush();
+
+    NSMutableArray<NSURL*>* files = [NSMutableArray array];
+    NSFileManager* fileManager = NSFileManager.defaultManager;
+    void (^appendFile)(NSString*) = ^(NSString* path) {
+        if (path.length > 0 && [fileManager fileExistsAtPath:path]) {
+            [files addObject:[NSURL fileURLWithPath:path]];
+        }
+    };
+
+    const char* logPath = SeriousIOS_DiagnosticsGetLogPath();
+    if (logPath != nullptr && *logPath != '\0') {
+        NSString* currentLog = [NSString stringWithUTF8String:logPath];
+        appendFile(currentLog);
+        appendFile([currentLog stringByAppendingString:@".1"]);
+        appendFile([currentLog stringByAppendingString:@".2"]);
+    }
+
+    const char* userPath = SeriousIOS_GetUserPath();
+    if (userPath != nullptr && *userPath != '\0') {
+        NSString* root = [NSString stringWithUTF8String:userPath];
+        for (NSString* name in @[
+            @"SeriousIOS-build-info.txt",
+            @"application-runtime-checkpoint.txt",
+            @"SeriousSam.log"
+        ]) {
+            appendFile([root stringByAppendingPathComponent:name]);
+        }
+    }
+
+    const char* temporaryPath = SeriousIOS_GetTemporaryPath();
+    if (temporaryPath != nullptr && *temporaryPath != '\0') {
+        NSString* root = [NSString stringWithUTF8String:temporaryPath];
+        for (NSString* name in @[
+            @"core-startup-checkpoint.txt",
+            @"game-runtime-checkpoint.txt"
+        ]) {
+            appendFile([root stringByAppendingPathComponent:name]);
+        }
+    }
+
+    UIViewController* presenter = [self presentingViewController];
+    if (presenter == nil) {
+        return;
+    }
+    if (files.count == 0) {
+        UIAlertController* alert = [UIAlertController
+            alertControllerWithTitle:@"No diagnostics yet"
+                             message:@"Run the application once, then try exporting again."
+                      preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+                                                  style:UIAlertActionStyleDefault
+                                                handler:nil]];
+        [presenter presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
+    UIActivityViewController* share = [[UIActivityViewController alloc]
+        initWithActivityItems:files
+        applicationActivities:nil];
+    share.popoverPresentationController.sourceView = _diagnosticsButton;
+    share.popoverPresentationController.sourceRect = _diagnosticsButton.bounds;
+    SeriousIOS_DiagnosticsLog("host", "diagnostics_export_presented file_count=%lu", (unsigned long)files.count);
+    [presenter presentViewController:share animated:YES completion:nil];
+}'''
+
+
+def transform(path: Path, build_identifier: str) -> None:
     text = transform_opengles1(path.read_text(encoding="utf-8"))
+
+    text = replace_once(
+        text,
+        '#include "SeriousIOSApplicationLifecycle.h"\n',
+        '#include "SeriousIOSApplicationLifecycle.h"\n#include "SeriousIOSDiagnostics.h"\n',
+        "diagnostics include",
+    )
 
     text = replace_once(
         text,
@@ -250,12 +355,13 @@ def transform(path: Path) -> None:
     CADisplayLink* _displayLink;''',
         '''    UILabel* _startupLabel;
     UIButton* _launchButton;
+    UIButton* _diagnosticsButton;
     UIButton* _importButton;
     CADisplayLink* _displayLink;''',
-        "diagnostic launch button ivar",
+        "diagnostic button ivars",
     )
 
-    launch_button = '''    _launchButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    button_construction = '''    _launchButton = [UIButton buttonWithType:UIButtonTypeSystem];
     _launchButton.translatesAutoresizingMaskIntoConstraints = NO;
     _launchButton.hidden = YES;
     _launchButton.titleLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightSemibold];
@@ -266,12 +372,23 @@ def transform(path: Path) -> None:
             forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:_launchButton];
 
+    _diagnosticsButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    _diagnosticsButton.translatesAutoresizingMaskIntoConstraints = NO;
+    _diagnosticsButton.titleLabel.font = [UIFont monospacedSystemFontOfSize:12.0 weight:UIFontWeightBold];
+    _diagnosticsButton.configuration = [UIButtonConfiguration tintedButtonConfiguration];
+    _diagnosticsButton.alpha = 0.72;
+    [_diagnosticsButton setTitle:@"LOG" forState:UIControlStateNormal];
+    [_diagnosticsButton addTarget:self
+                           action:@selector(exportDiagnostics)
+                 forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:_diagnosticsButton];
+
     _importButton = [UIButton buttonWithType:UIButtonTypeSystem];'''
     text = replace_once(
         text,
         "    _importButton = [UIButton buttonWithType:UIButtonTypeSystem];",
-        launch_button,
-        "diagnostic launch button construction",
+        button_construction,
+        "diagnostic button construction",
     )
 
     text = replace_once(
@@ -281,8 +398,10 @@ def transform(path: Path) -> None:
         '''        [_launchButton.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
         [_launchButton.topAnchor constraintEqualToAnchor:_startupLabel.bottomAnchor constant:20.0],
         [_importButton.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-        [_importButton.topAnchor constraintEqualToAnchor:_launchButton.bottomAnchor constant:12.0],''',
-        "diagnostic launch button constraints",
+        [_importButton.topAnchor constraintEqualToAnchor:_launchButton.bottomAnchor constant:12.0],
+        [_diagnosticsButton.leadingAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.leadingAnchor constant:8.0],
+        [_diagnosticsButton.topAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.topAnchor constant:8.0],''',
+        "diagnostic button constraints",
     )
 
     text = replace_method(
@@ -292,18 +411,133 @@ def transform(path: Path) -> None:
         diagnostic_startup_methods(),
     )
 
+    text = replace_once(
+        text,
+        "- (NSURL*)gameDataDirectoryURL {",
+        export_method() + "\n\n- (NSURL*)gameDataDirectoryURL {",
+        "diagnostics export method",
+    )
+
+    build_literal = json.dumps(build_identifier)
+    launch_initialization = f'''    if (!configurePlatformPaths()) {{
+        return NO;
+    }}
+    if (!SeriousIOS_DiagnosticsInitialize(
+            kEncounterName.UTF8String,
+            {build_literal})) {{
+        NSLog(@"SeriousiOS diagnostics initialization failed for %@", kEncounterName);
+    }}
+    SeriousIOS_DiagnosticsLog(
+        "host",
+        "launch encounter=%s os=%s device=%s native_bounds=%.0fx%.0f native_scale=%.3f",
+        kEncounterName.UTF8String,
+        UIDevice.currentDevice.systemVersion.UTF8String,
+        UIDevice.currentDevice.model.UTF8String,
+        UIScreen.mainScreen.nativeBounds.size.width,
+        UIScreen.mainScreen.nativeBounds.size.height,
+        UIScreen.mainScreen.nativeScale);
+    if (!registerRuntimeSymbols()) {{'''
+    text = replace_once(
+        text,
+        '''    if (!configurePlatformPaths()) {
+        return NO;
+    }
+    if (!registerRuntimeSymbols()) {''',
+        launch_initialization,
+        "diagnostics host initialization",
+    )
+
+    text = replace_once(
+        text,
+        '''    if (!registerRuntimeSymbols()) {
+        NSLog(@"SeriousiOS static runtime registration failed for %@", kEncounterName);
+        return NO;
+    }''',
+        '''    if (!registerRuntimeSymbols()) {
+        SeriousIOS_DiagnosticsLog("host", "static_runtime_registration_failed");
+        SeriousIOS_DiagnosticsShutdown();
+        NSLog(@"SeriousiOS static runtime registration failed for %@", kEncounterName);
+        return NO;
+    }
+    SeriousIOS_DiagnosticsLog("host", "static_runtime_registration_passed");''',
+        "runtime registration diagnostics",
+    )
+
+    text = replace_once(
+        text,
+        '''- (void)applicationDidEnterBackground:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_ApplicationSuspend();
+}''',
+        '''- (void)applicationDidEnterBackground:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_DiagnosticsLog("lifecycle", "application_did_enter_background");
+    SeriousIOS_ApplicationSuspend();
+    SeriousIOS_DiagnosticsFlush();
+}''',
+        "background diagnostics",
+    )
+
+    text = replace_once(
+        text,
+        '''- (void)applicationWillEnterForeground:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_ApplicationResume();
+}''',
+        '''- (void)applicationWillEnterForeground:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_DiagnosticsLog("lifecycle", "application_will_enter_foreground");
+    SeriousIOS_ApplicationResume();
+}''',
+        "foreground diagnostics",
+    )
+
+    text = replace_once(
+        text,
+        '''    if (SeriousIOS_ApplicationIsInitialized()) {
+        SeriousIOS_ApplicationShutdown();
+    } else {
+        SeriousIOS_StopEngine();
+    }
+}''',
+        '''    if (SeriousIOS_ApplicationIsInitialized()) {
+        SeriousIOS_ApplicationShutdown();
+    } else {
+        SeriousIOS_StopEngine();
+    }
+    SeriousIOS_DiagnosticsShutdown();
+}''',
+        "termination diagnostics",
+    )
+
+    text = replace_once(
+        text,
+        "- (void)applicationWillTerminate:(UIApplication*)application {",
+        '''- (void)applicationDidReceiveMemoryWarning:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_DiagnosticsLog("lifecycle", "memory_warning");
+    SeriousIOS_DiagnosticsWriteSummary("memory-warning");
+}
+
+- (void)applicationWillTerminate:(UIApplication*)application {''',
+        "memory warning diagnostics",
+    )
+
     path.write_text(text, encoding="utf-8")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("host_source", type=Path)
+    parser.add_argument("--build-id", default="local")
     args = parser.parse_args()
     source = args.host_source.resolve()
     if not source.is_file():
         raise SystemExit(f"host source does not exist: {source}")
-    transform(source)
-    print(f"Applied OpenGL ES 1.1 and crash-loop-safe diagnostics to {source}")
+    transform(source, args.build_id)
+    print(
+        f"Applied OpenGL ES 1.1, crash-loop-safe diagnostics, and flight recorder UI to {source}"
+    )
     return 0
 
 
