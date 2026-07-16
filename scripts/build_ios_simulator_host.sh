@@ -45,6 +45,12 @@ APP_DIR="$EVIDENCE/SeriousIOS-${ENCOUNTER}-Simulator.app"
 EXECUTABLE="SeriousIOS-${ENCOUNTER}"
 mkdir -p "$OBJECT_DIR" "$APP_DIR"
 
+DIAGNOSTIC_APP_SOURCE="$OBJECT_DIR/SeriousIOSHost-Diagnostic.mm"
+cp "$APP_SOURCE" "$DIAGNOSTIC_APP_SOURCE"
+python3 "$REPOSITORY_ROOT/scripts/transform_ios_host_for_diagnostics.py" \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-diagnostic-host-transform.log"
+
 common_compile=(
   -target "$TARGET"
   -isysroot "$SDK_PATH"
@@ -60,7 +66,7 @@ common_compile=(
   -fobjc-arc \
   -D"$define" \
   -x objective-c++ \
-  -c "$APP_SOURCE" \
+  -c "$DIAGNOSTIC_APP_SOURCE" \
   -o "$OBJECT_DIR/uikit-host.o"
 "$CXX" "${common_compile[@]}" \
   -c "$ENTITY_REGISTRY" \
