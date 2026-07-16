@@ -26,7 +26,15 @@ diff --git a/SamTFE/Sources/Engine/Base/Base.h b/SamTFE/Sources/Engine/Base/Base
 diff --git a/SamTFE/Sources/Engine/Base/Types.h b/SamTFE/Sources/Engine/Base/Types.h
 --- a/SamTFE/Sources/Engine/Base/Types.h
 +++ b/SamTFE/Sources/Engine/Base/Types.h
-@@ -141,7 +141,7 @@ MY_STATIC_ASSERT(size_tSize, sizeof(size_t) == sizeof(void*));
+@@ -25,6 +25,7 @@
+ #define __MSVC_INLINE__
+ #endif
+ 
++#include <stddef.h>
+ #include <Engine/Base/Base.h>
+ #include <Engine/Graphics/gl_types.h>
+ 
+@@ -141,7 +142,7 @@ MY_STATIC_ASSERT(size_tSize, sizeof(size_t) == sizeof(void*));
  #undef MY_STATIC_ASSERT
  
  // Mac symbols have an underscore prepended...
@@ -63,7 +71,15 @@ diff --git a/SamTSE/Sources/Engine/Base/Base.h b/SamTSE/Sources/Engine/Base/Base
 diff --git a/SamTSE/Sources/Engine/Base/Types.h b/SamTSE/Sources/Engine/Base/Types.h
 --- a/SamTSE/Sources/Engine/Base/Types.h
 +++ b/SamTSE/Sources/Engine/Base/Types.h
-@@ -141,7 +141,7 @@ MY_STATIC_ASSERT(size_tSize, sizeof(size_t) == sizeof(void*));
+@@ -25,6 +25,7 @@
+ #define __MSVC_INLINE__
+ #endif
+ 
++#include <stddef.h>
+ #include <Engine/Base/Base.h>
+ #include <Engine/Graphics/gl_types.h>
+ 
+@@ -141,7 +142,7 @@ MY_STATIC_ASSERT(size_tSize, sizeof(size_t) == sizeof(void*));
  #undef MY_STATIC_ASSERT
  
  // Mac symbols have an underscore prepended...
