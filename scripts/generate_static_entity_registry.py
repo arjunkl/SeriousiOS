@@ -14,7 +14,7 @@ SYMBOL_RE = re.compile(
 )
 ENTITY_RE = re.compile(r"(?m)^\s*entity\(\s*([^\s)#]+)\s*\)")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-LINE_COMMENT_RE = re.compile(r"//.*?$​", re.MULTILINE)
+LINE_COMMENT_RE = re.compile(r"//.*?$", re.MULTILINE)
 
 ENCOUNTER_PACKAGES = {
     "TFE": ("Engine/Classes/", "Entities/"),
