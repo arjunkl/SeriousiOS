@@ -28,6 +28,10 @@ if(IOS)
         message(FATAL_ERROR "SERIOUSIOS_PLATFORM_ROOT must point to the SeriousiOS platform source directory")
     endif()
     include_directories("${SERIOUSIOS_PLATFORM_ROOT}")
+    set_source_files_properties(
+        "${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp"
+        PROPERTIES COMPILE_DEFINITIONS
+            "SDL_GL_GetProcAddress=SeriousIOS_OriginalSDL_GL_GetProcAddress")
 endif()
 ''',
         f"{path}: platform root contract",
@@ -48,7 +52,9 @@ endif()
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSPlatformState.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSEngineStartup.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLGLProcAddress.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLCompat.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLTextureCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLExports.cpp
 ''',
         f"{path}: dynamic loader replacement",
