@@ -8,6 +8,7 @@
 - SDK: Apple `iphoneos`
 - Link mode: every runtime archive force-loaded into one executable per encounter
 - Dead stripping: disabled for the closure audit
+- CI reporting: both encounter reports are emitted before the paired gate can fail
 
 ## Closure result
 
