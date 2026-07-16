@@ -36,6 +36,7 @@ jobs:
           python3 -m py_compile scripts/generate_static_entity_registry.py
           python3 -m py_compile scripts/transform_sources_for_ios.py
           python3 -m py_compile scripts/transform_cmake_for_ios.py
+          python3 -m py_compile scripts/inject_ios_platform_sources.py
           python3 -m py_compile scripts/report_cmake_model.py
 
       - name: Install generator dependencies
@@ -130,8 +131,11 @@ jobs:
           python3 scripts/transform_cmake_for_ios.py upstream/SeriousSamClassic \
             2>&1 | tee build/cmake-model/transform.log
           cmake_status=${PIPESTATUS[0]}
+          python3 scripts/inject_ios_platform_sources.py upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/platform-injection.log
+          platform_status=${PIPESTATUS[0]}
           set -e
-          if [[ $source_status -ne 0 || $cmake_status -ne 0 ]]; then
+          if [[ $source_status -ne 0 || $cmake_status -ne 0 || $platform_status -ne 0 ]]; then
             exit 1
           fi
 
@@ -167,6 +171,7 @@ jobs:
               -DUSE_ASM=OFF \
               -DECC="$ecc" \
               -DSERIOUSIOS_RUNTIME_ONLY=ON \
+              -DSERIOUSIOS_PLATFORM_ROOT="$repository_root/Sources/Platform/iOS" \
               2>&1 | tee "build/cmake-model/${encounter}-configure.log"
 
             python3 scripts/report_cmake_model.py \
