@@ -49,6 +49,7 @@ endif()
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSEngineStartup.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLCompat.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLExports.cpp
 ''',
         f"{path}: dynamic loader replacement",
     )
