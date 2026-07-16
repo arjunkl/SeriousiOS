@@ -55,6 +55,9 @@ common_compile=(
 "$CXX" "${common_compile[@]}" \
   -c "$RUNTIME_REGISTRY" \
   -o "$OBJECT_DIR/runtime-registry.o"
+"$CXX" "${common_compile[@]}" \
+  -c "$PLATFORM_ROOT/SeriousIOSHostGlobals.cpp" \
+  -o "$OBJECT_DIR/host-globals.o"
 
 archive_arguments=()
 for target in "${archives[@]}"; do
@@ -70,12 +73,17 @@ output="$EVIDENCE/SeriousIOS-${ENCOUNTER}-DryLink"
 log="$EVIDENCE/${ENCOUNTER}-dry-link.log"
 command_file="$EVIDENCE/${ENCOUNTER}-dry-link-command.txt"
 
+link_objects=(
+  "$OBJECT_DIR/main.o"
+  "$OBJECT_DIR/entity-registry.o"
+  "$OBJECT_DIR/runtime-registry.o"
+  "$OBJECT_DIR/host-globals.o"
+)
+
 printf '%q ' "$CXX" \
   -target arm64-apple-ios15.0 \
   -isysroot "$SDK_PATH" \
-  "$OBJECT_DIR/main.o" \
-  "$OBJECT_DIR/entity-registry.o" \
-  "$OBJECT_DIR/runtime-registry.o" \
+  "${link_objects[@]}" \
   "${archive_arguments[@]}" \
   -Wl,-dead_strip \
   -Wl,-undefined,error \
@@ -98,9 +106,7 @@ set +e
 "$CXX" \
   -target arm64-apple-ios15.0 \
   -isysroot "$SDK_PATH" \
-  "$OBJECT_DIR/main.o" \
-  "$OBJECT_DIR/entity-registry.o" \
-  "$OBJECT_DIR/runtime-registry.o" \
+  "${link_objects[@]}" \
   "${archive_arguments[@]}" \
   -Wl,-dead_strip \
   -Wl,-undefined,error \
