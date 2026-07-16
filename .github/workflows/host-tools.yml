@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  build-and-generate:
+  build-generate-and-configure:
     runs-on: macos-15
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout SeriousiOS
         uses: actions/checkout@v4
@@ -30,8 +30,11 @@ jobs:
           bash -n scripts/build_host_tools.sh
           bash -n scripts/smoke_generate_entities.sh
           bash -n scripts/generate_all_sources.sh
+          bash -n scripts/apply_upstream_patches.sh
           python3 -m py_compile scripts/report_dependency_graph.py
           python3 -m py_compile scripts/generate_static_entity_registry.py
+          python3 -m py_compile scripts/transform_cmake_for_ios.py
+          python3 -m py_compile scripts/report_cmake_model.py
 
       - name: Install generator dependencies
         shell: bash
@@ -110,7 +113,58 @@ jobs:
             -I Sources/Platform/iOS \
             -fsyntax-only build/static-registries/SeriousIOSTSEEntityRegistry.cpp
 
-      - name: Upload host-tool evidence
+      - name: Transform upstream CMake graph for iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/apply_upstream_patches.sh upstream/SeriousSamClassic
+          python3 scripts/transform_cmake_for_ios.py upstream/SeriousSamClassic
+          mkdir -p build/cmake-model
+          git -C upstream/SeriousSamClassic diff --check
+          git -C upstream/SeriousSamClassic diff --binary > build/cmake-model/seriousios-upstream.patch
+          git -C upstream/SeriousSamClassic status --short > build/cmake-model/upstream-status.txt
+
+      - name: Configure static arm64 iOS runtime graphs
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository_root=$(pwd)
+          for encounter in TFE TSE; do
+            build_dir="build/cmake-model/${encounter}"
+            source_dir="upstream/SeriousSamClassic/Sam${encounter}/Sources"
+            ecc="$repository_root/build/host-tools/${encounter}/bin/ecc-se"
+            mkdir -p "$build_dir/.cmake/api/v1/query"
+            : > "$build_dir/.cmake/api/v1/query/codemodel-v2"
+
+            cmake \
+              -S "$source_dir" \
+              -B "$build_dir" \
+              -G Xcode \
+              -DCMAKE_SYSTEM_NAME=iOS \
+              -DCMAKE_OSX_SYSROOT=iphoneos \
+              -DCMAKE_OSX_ARCHITECTURES=arm64 \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+              -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+              -DUSE_SYSTEM_SDL2=OFF \
+              -DUSE_SYSTEM_ZLIB=OFF \
+              -DUSE_ASM=OFF \
+              -DECC="$ecc" \
+              -DSERIOUSIOS_RUNTIME_ONLY=ON \
+              -DBUILD_DEDICATED_SERVER=OFF \
+              -DBUILD_MAKEFONT=OFF \
+              -DBUILD_TEXConv=OFF \
+              -DBUILD_AMP11LIB=OFF \
+              2>&1 | tee "build/cmake-model/${encounter}-configure.log"
+
+            python3 scripts/report_cmake_model.py \
+              "$build_dir" \
+              "$encounter" \
+              "build/cmake-model/${encounter}-codemodel.json"
+          done
+
+      - name: Upload host-tool and CMake evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -125,5 +179,6 @@ jobs:
             build/generated-all/TSE/summary.txt
             build/generated-all/TSE/generated.sha256
             build/static-registries
+            build/cmake-model
           if-no-files-found: warn
           retention-days: 14
