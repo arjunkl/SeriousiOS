@@ -12,6 +12,7 @@ void SeriousIOS_ApplicationSuspend(void);
 void SeriousIOS_ApplicationResume(void);
 void SeriousIOS_ApplicationShutdown(void);
 bool SeriousIOS_ApplicationIsInitialized(void);
+const char* SeriousIOS_ApplicationGetError(void);
 
 #ifdef __cplusplus
 } // extern "C"
