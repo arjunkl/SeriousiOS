@@ -28,10 +28,6 @@ void attachHostWindow() {
 
 } // namespace
 
-CTString strWindow1251ToUtf8(CTString from) {
-    return from;
-}
-
 void MainWindow_Init(void) {
     attachHostWindow();
 }
