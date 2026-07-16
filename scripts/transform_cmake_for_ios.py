@@ -30,7 +30,16 @@ def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
     return updated
 
 
+def encounter_from_path(path: Path) -> str:
+    if "SamTFE" in path.parts:
+        return "TFE"
+    if "SamTSE" in path.parts:
+        return "TSE"
+    raise RuntimeError(f"cannot determine encounter from {path}")
+
+
 def transform(path: Path) -> None:
+    encounter = encounter_from_path(path)
     text = path.read_text(encoding="utf-8")
 
     text = regex_once(
@@ -130,14 +139,32 @@ endif()''',
         f"{path}: immutable entity inputs",
     )
 
-    text = replace_once(
-        text,
-        '''if(NOT ECC)
+    if encounter == "TFE":
+        text = replace_once(
+            text,
+            '''if(NOT ECC)
+    add_parser_and_scanner("Ecc/Parser" "Ecc/Scanner")
+    add_executable(ecc Ecc/Main.cpp Ecc/Parser.cpp Ecc/Parser.h Ecc/Scanner.cpp)
+    set(ECC "ecc")
+endif()''',
+            '''if(NOT ECC)
+    add_parser_and_scanner("Ecc/Parser" "Ecc/Scanner")
+    add_executable(ecc Ecc/Main.cpp Ecc/Parser.cpp Ecc/Parser.h Ecc/Scanner.cpp)
+    set(ECC "ecc")
+else()
+    message(STATUS "Using prebuilt host ECC: ${ECC}")
+endif()''',
+            f"{path}: TFE host ECC selection",
+        )
+    else:
+        text = replace_once(
+            text,
+            '''if(NOT ECC)
     add_parser_and_scanner("Ecc/Parser" "Ecc/Scanner")
     add_executable(ecc-se Ecc/Main.cpp Ecc/Parser.cpp Ecc/Parser.h Ecc/Scanner.cpp)
     set(ECC-SE "ecc-se")
 endif()''',
-        '''if(NOT ECC)
+            '''if(NOT ECC)
     add_parser_and_scanner("Ecc/Parser" "Ecc/Scanner")
     add_executable(ecc-se Ecc/Main.cpp Ecc/Parser.cpp Ecc/Parser.h Ecc/Scanner.cpp)
     set(ECC-SE "ecc-se")
@@ -145,8 +172,8 @@ else()
     set(ECC-SE "${ECC}")
     message(STATUS "Using prebuilt host ECC: ${ECC-SE}")
 endif()''',
-        f"{path}: host ECC selection",
-    )
+            f"{path}: TSE host ECC selection",
+        )
 
     library_replacements = {
         'add_library(${ENTITIESMPLIB} SHARED': 'add_library(${ENTITIESMPLIB} ${SERIOUS_RUNTIME_LIBRARY_TYPE}',
