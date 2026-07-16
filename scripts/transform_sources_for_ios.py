@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import re
 from pathlib import Path
 
 ENCOUNTERS = ("TFE", "TSE")
@@ -22,18 +21,28 @@ def replace_exact(path: Path, old: str, new: str, expected: int = 1) -> int:
 
 
 def disable_armv7_neon_on_ios(path: Path) -> int:
-    text = path.read_text(encoding="utf-8")
-    pattern = re.compile(
-        r"(?m)^(#if\s+defined(?:\s+|\()__ARM_NEON__\)?"
-        r"\s*&&\s*!defined(?:\s+|\()PLATFORM_MACOSX\)?)"
-        r"(?![^\n]*PLATFORM_IOS)"
-    )
-    updated, count = pattern.subn(r"\1 && !defined PLATFORM_IOS", text)
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    count = 0
+    transformed: list[str] = []
+
+    for line in lines:
+        stripped = line.lstrip()
+        if (
+            stripped.startswith("#if")
+            and "__ARM_NEON__" in line
+            and "PLATFORM_MACOSX" in line
+            and "PLATFORM_IOS" not in line
+        ):
+            newline = "\n" if line.endswith("\n") else ""
+            line = line.rstrip("\r\n") + " && !defined PLATFORM_IOS" + newline
+            count += 1
+        transformed.append(line)
+
     if count < 1:
         raise RuntimeError(
             f"{path}: expected at least one ARM NEON/macOS guard to adapt"
         )
-    path.write_text(updated, encoding="utf-8")
+    path.write_text("".join(transformed), encoding="utf-8")
     return count
 
 
