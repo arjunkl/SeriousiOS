@@ -1,0 +1,52 @@
+diff --git a/SamTFE/Sources/SeriousSam/SeriousSam.cpp b/SamTFE/Sources/SeriousSam/SeriousSam.cpp
+index 372f769..dd8384b 100644
+--- a/SamTFE/Sources/SeriousSam/SeriousSam.cpp
++++ b/SamTFE/Sources/SeriousSam/SeriousSam.cpp
+@@ -16,6 +16,10 @@ This program is free software; you can redistribute it and/or modify
+ 
+ #include "SeriousSam/StdH.h"
+ 
++#ifdef PLATFORM_IOS
++#include "SeriousIOSPlatformBridge.h"
++#endif
++
+ #ifdef PLATFORM_WIN32
+ #include <io.h>
+ #include <process.h>
+@@ -714,7 +718,9 @@ BOOL Init( HINSTANCE hInstance, int nCmdShow, CTString strCmdLine)
+   ParseCommandLine(strCmdLine);
+ 
+   // initialize engine
+-#ifdef PLATFORM_UNIX
++#ifdef PLATFORM_IOS
++  SE_InitEngine(SeriousIOS_GetExecutablePath(), sam_strGameName);
++#elif defined(PLATFORM_UNIX)
+   SE_InitEngine(argv0, sam_strGameName);
+ #else
+   SE_InitEngine(sam_strGameName);
+diff --git a/SamTSE/Sources/SeriousSam/SeriousSam.cpp b/SamTSE/Sources/SeriousSam/SeriousSam.cpp
+index 372f769..dd8384b 100644
+--- a/SamTSE/Sources/SeriousSam/SeriousSam.cpp
++++ b/SamTSE/Sources/SeriousSam/SeriousSam.cpp
+@@ -16,6 +16,10 @@ This program is free software; you can redistribute it and/or modify
+ 
+ #include "SeriousSam/StdH.h"
+ 
++#ifdef PLATFORM_IOS
++#include "SeriousIOSPlatformBridge.h"
++#endif
++
+ #ifdef PLATFORM_WIN32
+ #include <io.h>
+ #include <process.h>
+@@ -714,7 +718,9 @@ BOOL Init( HINSTANCE hInstance, int nCmdShow, CTString strCmdLine)
+   ParseCommandLine(strCmdLine);
+ 
+   // initialize engine
+-#ifdef PLATFORM_UNIX
++#ifdef PLATFORM_IOS
++  SE_InitEngine(SeriousIOS_GetExecutablePath(), sam_strGameName);
++#elif defined(PLATFORM_UNIX)
+   SE_InitEngine(argv0, sam_strGameName);
+ #else
+   SE_InitEngine(sam_strGameName);
