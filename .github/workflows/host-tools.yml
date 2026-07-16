@@ -218,30 +218,32 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p build/link-evidence
+          overall_status=0
           for encounter in TFE TSE; do
             entity="build/static-registries/SeriousIOS${encounter}EntityRegistry.cpp"
             runtime="build/static-registries/SeriousIOS${encounter}RuntimeRegistry.cpp"
-            status=0
+            driver_status=0
             bash scripts/dry_link_ios_runtime.sh \
               "build/cmake-model/${encounter}" \
               "$encounter" \
               "$entity" \
               "$runtime" \
-              build/link-evidence || status=$?
-            echo "$status" > "build/link-evidence/${encounter}-driver-status.txt"
+              build/link-evidence || driver_status=$?
+            echo "$driver_status" > "build/link-evidence/${encounter}-driver-status.txt"
 
             log="build/link-evidence/${encounter}-dry-link.log"
             link_status="build/link-evidence/${encounter}-dry-link-status.txt"
             if [[ ! -f "$log" ]]; then
-              echo "Dry-link driver failed before invoking the linker (status ${status})." > "$log"
-              echo "$status" > "$link_status"
+              echo "Dry-link driver failed before invoking the linker (status ${driver_status})." > "$log"
+              echo "$driver_status" > "$link_status"
             fi
             python3 scripts/report_ios_link.py \
               "$log" \
               "$encounter" \
               "build/link-evidence/${encounter}-link-report.json" \
-              --status-file "$link_status"
+              --status-file "$link_status" || overall_status=1
           done
+          exit "$overall_status"
 
       - name: Build UIKit and EAGL host shells
         shell: bash
