@@ -67,6 +67,7 @@ jobs:
               -isysroot "$SDK_PATH" \
               -std=c++14 \
               -Wall -Wextra -Werror \
+              -Wno-unused-parameter \
               -DUSE_PORTABLE_C=1 \
               -DPRAGMA_ONCE=1 \
               -I "upstream/SeriousSamClassic/Sam${encounter}/Sources" \
