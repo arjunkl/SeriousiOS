@@ -1,0 +1,26 @@
+diff --git a/SamTFE/Sources/SeriousSam/SeriousSam.cpp b/SamTFE/Sources/SeriousSam/SeriousSam.cpp
+index 372f769..6873d7b 100644
+--- a/SamTFE/Sources/SeriousSam/SeriousSam.cpp
++++ b/SamTFE/Sources/SeriousSam/SeriousSam.cpp
+@@ -64,7 +64,7 @@ extern FLOAT _fGlobalOptionsAdjuster;
+ extern FLOAT _fGlobalModAdjuster;
+ extern FLOAT _fGlobalButtonAdjuster;
+ extern FLOAT _fGlobalProfileFOVAdjuster;
+-#ifdef PLATFORM_UNIX
++#if defined(PLATFORM_UNIX) && !defined(PLATFORM_IOS)
+ ENGINE_API FLOAT _fWeaponFOVAdjuster;
+ ENGINE_API FLOAT _fPlayerFOVAdjuster;
+ ENGINE_API FLOAT _fArmorHeightAdjuster;
+diff --git a/SamTSE/Sources/SeriousSam/SeriousSam.cpp b/SamTSE/Sources/SeriousSam/SeriousSam.cpp
+index 372f769..6873d7b 100644
+--- a/SamTSE/Sources/SeriousSam/SeriousSam.cpp
++++ b/SamTSE/Sources/SeriousSam/SeriousSam.cpp
+@@ -64,7 +64,7 @@ extern FLOAT _fGlobalOptionsAdjuster;
+ extern FLOAT _fGlobalModAdjuster;
+ extern FLOAT _fGlobalButtonAdjuster;
+ extern FLOAT _fGlobalProfileFOVAdjuster;
+-#ifdef PLATFORM_UNIX
++#if defined(PLATFORM_UNIX) && !defined(PLATFORM_IOS)
+ ENGINE_API FLOAT _fWeaponFOVAdjuster;
+ ENGINE_API FLOAT _fPlayerFOVAdjuster;
+ ENGINE_API FLOAT _fArmorHeightAdjuster;
