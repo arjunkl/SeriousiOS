@@ -22,13 +22,13 @@ case "$ENCOUNTER" in
     define=SERIOUSIOS_TFE
     display_name="Serious Sam: The First Encounter"
     bundle_id="com.arjunkl.seriousios.tfe"
-    archives=(engine_safemath Engine Game Shaders Entities)
+    archives=(engine_safemath Engine Game Shaders Entities SeriousIOSApplication)
     ;;
   TSE)
     define=SERIOUSIOS_TSE
     display_name="Serious Sam: The Second Encounter"
     bundle_id="com.arjunkl.seriousios.tse"
-    archives=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP)
+    archives=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP SeriousIOSApplicationMP)
     ;;
   *)
     echo "encounter must be TFE or TSE" >&2
@@ -151,8 +151,7 @@ shasum -a 256 "$APP_DIR/$EXECUTABLE" | tee -a "$EVIDENCE/${ENCOUNTER}-uikit-prod
 otool -L "$APP_DIR/$EXECUTABLE" > "$EVIDENCE/${ENCOUNTER}-uikit-linked-frameworks.txt"
 
 # Produce an unsigned IPA container suitable for downstream signing by AltStore,
-# Xcode, or another user-controlled signing tool. This is a host-shell milestone:
-# no copyrighted Serious Sam data files are bundled.
+# Xcode, or another user-controlled signing tool. No copyrighted data is bundled.
 bash "$REPOSITORY_ROOT/scripts/package_unsigned_ipa.sh" \
   "$ENCOUNTER" \
   "$APP_DIR" \
