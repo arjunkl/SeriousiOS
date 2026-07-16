@@ -80,12 +80,14 @@ link_objects=(
   "$OBJECT_DIR/host-globals.o"
 )
 
+# Do not enable dead stripping in this audit. Every object from every runtime
+# archive must remain eligible for relocation so dormant startup, filesystem,
+# lifecycle, and error paths cannot hide unresolved or duplicate symbols.
 printf '%q ' "$CXX" \
   -target arm64-apple-ios15.0 \
   -isysroot "$SDK_PATH" \
   "${link_objects[@]}" \
   "${archive_arguments[@]}" \
-  -Wl,-dead_strip \
   -framework Foundation \
   -framework UIKit \
   -framework CoreFoundation \
@@ -107,7 +109,6 @@ set +e
   -isysroot "$SDK_PATH" \
   "${link_objects[@]}" \
   "${archive_arguments[@]}" \
-  -Wl,-dead_strip \
   -framework Foundation \
   -framework UIKit \
   -framework CoreFoundation \
