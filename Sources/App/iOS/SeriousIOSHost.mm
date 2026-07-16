@@ -4,6 +4,7 @@
 #import <OpenGLES/ES2/gl.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#include "SeriousIOSApplicationLifecycle.h"
 #include "SeriousIOSEngineStartup.h"
 #include "SeriousIOSPlatformBridge.h"
 
@@ -13,14 +14,12 @@ extern "C" bool SeriousIOS_TFE_RegisterRuntimeSymbols() noexcept;
 static NSString* const kEncounterName = @"The First Encounter";
 static NSString* const kEncounterPathComponent = @"TFE";
 static NSString* const kRequiredGameDataSentinel = @"1_00_music.gro";
-static NSString* const kGameIdentifier = @"serioussam";
 #elif defined(SERIOUSIOS_TSE)
 extern "C" bool SeriousIOS_TSE_RegisterEntitySymbols() noexcept;
 extern "C" bool SeriousIOS_TSE_RegisterRuntimeSymbols() noexcept;
 static NSString* const kEncounterName = @"The Second Encounter";
 static NSString* const kEncounterPathComponent = @"TSE";
 static NSString* const kRequiredGameDataSentinel = @"SE1_00_Levels.gro";
-static NSString* const kGameIdentifier = @"serioussamse";
 #else
 #error Define SERIOUSIOS_TFE or SERIOUSIOS_TSE
 #endif
@@ -103,6 +102,14 @@ NSString* formattedByteCount(unsigned long long byteCount) {
                                           countStyle:NSByteCountFormatterCountStyleFile];
 }
 
+NSString* stringFromCString(const char* value, NSString* fallback) {
+    if (value == nullptr || *value == '\0') {
+        return fallback;
+    }
+    NSString* converted = [NSString stringWithUTF8String:value];
+    return converted == nil ? fallback : converted;
+}
+
 } // namespace
 
 @interface SeriousIOSRenderView : UIView <UIDocumentPickerDelegate>
@@ -118,7 +125,9 @@ NSString* formattedByteCount(unsigned long long byteCount) {
     GLint _drawableHeight;
     UILabel* _startupLabel;
     UIButton* _importButton;
+    CADisplayLink* _displayLink;
     BOOL _startupScheduled;
+    BOOL _renderedFirstApplicationFrame;
 }
 
 + (Class)layerClass {
@@ -181,6 +190,8 @@ NSString* formattedByteCount(unsigned long long byteCount) {
 }
 
 - (void)dealloc {
+    [_displayLink invalidate];
+    _displayLink = nil;
     SeriousIOS_SetPresentCallback(nullptr, nullptr);
     SeriousIOS_SetGLContext(nullptr, nullptr);
     [self destroyDrawable];
@@ -248,26 +259,41 @@ NSString* formattedByteCount(unsigned long long byteCount) {
     const BOOL hasValidatedGameData = [self requiredSentinelExists];
     _startupLabel.text = [NSString stringWithFormat:
         hasValidatedGameData
-            ? @"SeriousiOS %@\nStarting full game runtime with imported data…"
+            ? @"SeriousiOS %@\nStarting full application with imported data…"
             : @"SeriousiOS %@\nStarting core engine without game data…",
         kEncounterName];
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        const bool started = hasValidatedGameData
-            ? SeriousIOS_StartGameRuntime(kGameIdentifier.UTF8String)
-            : SeriousIOS_StartCoreEngine();
-        const SeriousIOSEngineState state = SeriousIOS_GetEngineState();
+        if (hasValidatedGameData) {
+            const bool started = SeriousIOS_ApplicationInitialize();
+            if (started) {
+                self->_startupLabel.textColor = UIColor.systemGreenColor;
+                self->_startupLabel.text = [NSString stringWithFormat:
+                    @"SeriousiOS %@\nApplication initialized\nStarting UIKit-driven frame loop…",
+                    kEncounterName];
+                self->_importButton.hidden = YES;
+                [self startApplicationFrameLoop];
+                NSLog(@"SeriousiOS application lifecycle initialized for %@", kEncounterName);
+                return;
+            }
 
-        if (started && state == SeriousIOSEngineStateGameInitialized) {
-            self->_startupLabel.textColor = UIColor.systemGreenColor;
+            NSString* errorText = stringFromCString(
+                SeriousIOS_ApplicationGetError(),
+                @"Unknown application startup failure");
+            self->_startupLabel.textColor = UIColor.systemRedColor;
             self->_startupLabel.text = [NSString stringWithFormat:
-                @"SeriousiOS %@\nFull game runtime initialized\nPlayer class and Data\\SeriousSam.gms loaded\nMenu and viewport integration are the next gate",
-                kEncounterName];
-            self->_importButton.hidden = YES;
-            NSLog(@"SeriousiOS full game runtime checkpoint passed for %@", kEncounterName);
+                @"SeriousiOS %@\nApplication startup failed\n%@",
+                kEncounterName,
+                errorText];
+            self->_importButton.hidden = NO;
+            [self->_importButton setTitle:@"Re-import original .gro files"
+                                 forState:UIControlStateNormal];
+            NSLog(@"SeriousiOS application startup failed for %@: %@", kEncounterName, errorText);
             return;
         }
 
+        const bool started = SeriousIOS_StartCoreEngine();
+        const SeriousIOSEngineState state = SeriousIOS_GetEngineState();
         if (started && state == SeriousIOSEngineStateCoreInitialized) {
             self->_startupLabel.textColor = UIColor.systemGreenColor;
             self->_startupLabel.text = [NSString stringWithFormat:
@@ -279,19 +305,57 @@ NSString* formattedByteCount(unsigned long long byteCount) {
             return;
         }
 
-        const char* startupError = SeriousIOS_GetEngineStartupError();
-        NSString* errorText = startupError == nullptr
-            ? @"Unknown startup failure"
-            : [NSString stringWithUTF8String:startupError];
+        NSString* errorText = stringFromCString(
+            SeriousIOS_GetEngineStartupError(),
+            @"Unknown core engine startup failure");
         self->_startupLabel.textColor = UIColor.systemRedColor;
         self->_startupLabel.text = [NSString stringWithFormat:
-            @"SeriousiOS %@\n%@ startup failed\n%@",
+            @"SeriousiOS %@\nCore engine startup failed\n%@",
             kEncounterName,
-            hasValidatedGameData ? @"Full game runtime" : @"Core engine",
             errorText];
-        self->_importButton.hidden = !hasValidatedGameData;
-        NSLog(@"SeriousiOS startup failed for %@: %@", kEncounterName, errorText);
+        self->_importButton.hidden = YES;
+        NSLog(@"SeriousiOS core engine startup failed for %@: %@", kEncounterName, errorText);
     });
+}
+
+- (void)startApplicationFrameLoop {
+    if (_displayLink != nil) {
+        return;
+    }
+    _renderedFirstApplicationFrame = NO;
+    _displayLink = [CADisplayLink displayLinkWithTarget:self
+                                               selector:@selector(applicationFrame:)];
+    _displayLink.preferredFramesPerSecond = 60;
+    [_displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
+
+- (void)applicationFrame:(CADisplayLink*)displayLink {
+    (void)displayLink;
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+        return;
+    }
+
+    const bool rendered = SeriousIOS_ApplicationFrame();
+    if (rendered) {
+        if (!_renderedFirstApplicationFrame) {
+            _renderedFirstApplicationFrame = YES;
+            _startupLabel.hidden = YES;
+        }
+        return;
+    }
+
+    [_displayLink invalidate];
+    _displayLink = nil;
+    _startupLabel.hidden = NO;
+    _startupLabel.textColor = UIColor.systemRedColor;
+    NSString* errorText = stringFromCString(
+        SeriousIOS_ApplicationGetError(),
+        @"The Serious Sam frame loop stopped");
+    _startupLabel.text = [NSString stringWithFormat:
+        @"SeriousiOS %@\nApplication frame loop stopped\n%@",
+        kEncounterName,
+        errorText];
+    NSLog(@"SeriousiOS application frame loop stopped for %@: %@", kEncounterName, errorText);
 }
 
 - (NSURL*)gameDataDirectoryURL {
@@ -338,7 +402,7 @@ NSString* formattedByteCount(unsigned long long byteCount) {
 
     _startupLabel.textColor = UIColor.systemGreenColor;
     _startupLabel.text = [NSString stringWithFormat:
-        @"SeriousiOS %@\nCore engine initialized\nOriginal-data sentinel found: %@\n%lu .gro files, %@\nClose and reopen the app to run the full game-runtime checkpoint",
+        @"SeriousiOS %@\nCore engine initialized\nOriginal-data sentinel found: %@\n%lu .gro files, %@\nClose and reopen the app to run the full application checkpoint",
         kEncounterName,
         kRequiredGameDataSentinel,
         (unsigned long)groCount,
@@ -442,7 +506,7 @@ NSString* formattedByteCount(unsigned long long byteCount) {
             if (sentinelFound) {
                 self->_startupLabel.textColor = UIColor.systemGreenColor;
                 self->_startupLabel.text = [NSString stringWithFormat:
-                    @"SeriousiOS %@\nCopied %lu .gro files, %@\nRequired sentinel found: %@\nClose and reopen the app to initialize the full game runtime",
+                    @"SeriousiOS %@\nCopied %lu .gro files, %@\nRequired sentinel found: %@\nClose and reopen the app to initialize the full application and menu loop",
                     kEncounterName,
                     (unsigned long)copiedCount,
                     formattedByteCount(copiedBytes),
@@ -560,9 +624,23 @@ static int SeriousIOSMakeCurrent(void* context) {
     return YES;
 }
 
+- (void)applicationDidEnterBackground:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_ApplicationSuspend();
+}
+
+- (void)applicationWillEnterForeground:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_ApplicationResume();
+}
+
 - (void)applicationWillTerminate:(UIApplication*)application {
     (void)application;
-    SeriousIOS_StopEngine();
+    if (SeriousIOS_ApplicationIsInitialized()) {
+        SeriousIOS_ApplicationShutdown();
+    } else {
+        SeriousIOS_StopEngine();
+    }
 }
 
 @end
