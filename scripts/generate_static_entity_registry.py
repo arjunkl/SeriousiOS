@@ -18,6 +18,10 @@ ENCOUNTER_PACKAGES = {
     "TFE": ("Engine/Classes/", "Entities/"),
     "TSE": ("Engine/Classes/", "EntitiesMP/"),
 }
+GAME_PACKAGE_PREFIX = {
+    "TFE": "Entities/",
+    "TSE": "EntitiesMP/",
+}
 
 
 def selected_entities(upstream: Path, encounter: str) -> list[str]:
@@ -48,22 +52,39 @@ def discover_symbols(
     generated_root: Path,
     upstream: Path,
     encounter: str,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     entities = selected_entities(upstream, encounter)
+    game_prefix = GAME_PACKAGE_PREFIX[encounter]
     symbol_by_entity: dict[str, str] = {}
+    support_units: list[str] = []
+    problems: list[str] = []
 
     for entity in entities:
         header = generated_root / f"{entity}.h"
         if not header.is_file():
-            raise FileNotFoundError(
-                f"{encounter}: generated header missing for CMake entity {entity}: {header}"
+            problems.append(f"missing generated header for {entity}: {header}")
+            continue
+
+        matches = sorted(
+            set(SYMBOL_RE.findall(header.read_text(encoding="utf-8", errors="ignore")))
+        )
+        if len(matches) == 1:
+            symbol_by_entity[entity] = matches[0]
+            continue
+
+        if not matches and entity.startswith("Engine/Classes/"):
+            # BaseEvents and similar generated support units are compiled into the
+            # Engine archive but are not runtime-loadable entity classes. They must
+            # not be registered as dlsym replacements.
+            support_units.append(entity)
+            continue
+
+        if not matches and entity.startswith(game_prefix):
+            problems.append(f"game entity {entity} has no DLLClass export in {header}")
+        else:
+            problems.append(
+                f"expected at most one DLLClass export in {header}, found {matches}"
             )
-        matches = sorted(set(SYMBOL_RE.findall(header.read_text(encoding="utf-8", errors="ignore"))))
-        if len(matches) != 1:
-            raise RuntimeError(
-                f"{encounter}: expected one DLLClass export in {header}, found {matches}"
-            )
-        symbol_by_entity[entity] = matches[0]
 
     symbols = sorted(set(symbol_by_entity.values()))
     if len(symbols) != len(symbol_by_entity):
@@ -71,9 +92,22 @@ def discover_symbols(
         for entity, symbol in symbol_by_entity.items():
             duplicates.setdefault(symbol, []).append(entity)
         repeated = {symbol: paths for symbol, paths in duplicates.items() if len(paths) > 1}
-        raise RuntimeError(f"{encounter}: duplicate entity exports: {repeated}")
+        problems.append(f"duplicate entity exports: {repeated}")
 
-    return symbols, entities
+    game_entity_count = sum(1 for entity in entities if entity.startswith(game_prefix))
+    registered_game_count = sum(
+        1 for entity in symbol_by_entity if entity.startswith(game_prefix)
+    )
+    if registered_game_count != game_entity_count:
+        problems.append(
+            f"registered {registered_game_count} of {game_entity_count} selected game entities"
+        )
+
+    if problems:
+        rendered = "\n  - ".join(problems)
+        raise RuntimeError(f"{encounter}: entity registry audit failed:\n  - {rendered}")
+
+    return symbols, entities, sorted(support_units)
 
 
 def render(encounter: str, symbols: list[str]) -> str:
@@ -125,7 +159,7 @@ def main() -> int:
     if not upstream.is_dir():
         raise SystemExit(f"upstream root does not exist: {upstream}")
 
-    symbols, entities = discover_symbols(root, upstream, args.encounter)
+    symbols, entities, support_units = discover_symbols(root, upstream, args.encounter)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(render(args.encounter, symbols), encoding="utf-8")
@@ -140,6 +174,8 @@ def main() -> int:
                 "upstream_root": str(upstream),
                 "selected_entity_count": len(entities),
                 "selected_entities": entities,
+                "non_loadable_support_count": len(support_units),
+                "non_loadable_support_units": support_units,
                 "symbol_count": len(symbols),
                 "symbols": symbols,
             },
@@ -151,8 +187,8 @@ def main() -> int:
     )
 
     print(
-        f"{args.encounter}: generated registry for {len(symbols)} "
-        f"CMake-selected entity symbols"
+        f"{args.encounter}: generated registry for {len(symbols)} loadable symbols; "
+        f"skipped {len(support_units)} non-loadable Engine support units"
     )
     return 0
 
