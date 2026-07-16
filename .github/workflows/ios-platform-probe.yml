@@ -1,0 +1,82 @@
+name: SeriousiOS iPhoneOS Platform Probe
+
+on:
+  push:
+    branches:
+      - main
+      - agent/**
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-base-platform:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Checkout SeriousiOS
+        uses: actions/checkout@v4
+
+      - name: Load pinned revisions
+        shell: bash
+        run: cat Dependencies.lock >> "$GITHUB_ENV"
+
+      - name: Validate patch tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/apply_upstream_patches.sh
+          git apply --check patches/0001-detect-ios-platform.patch
+
+      - name: Checkout pinned SeriousSamClassic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "$SERIOUSSAMCLASSIC_REPOSITORY" upstream/SeriousSamClassic
+          git -C upstream/SeriousSamClassic checkout --detach "$SERIOUSSAMCLASSIC_COMMIT"
+          test "$(git -C upstream/SeriousSamClassic rev-parse HEAD)" = "$SERIOUSSAMCLASSIC_COMMIT"
+
+      - name: Apply SeriousiOS upstream patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/apply_upstream_patches.sh upstream/SeriousSamClassic
+
+      - name: Compile engine platform probe for arm64 iPhoneOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          CXX=$(xcrun --sdk iphoneos --find clang++)
+          mkdir -p artifacts
+
+          {
+            echo "sdk=$SDK_PATH"
+            echo "compiler=$($CXX --version | head -n 1)"
+            echo "target=arm64-apple-ios15.0"
+            cat upstream/SeriousSamClassic/seriousios-patches.manifest
+          } | tee artifacts/ios-platform-probe.txt
+
+          for encounter in TFE TSE; do
+            "$CXX" \
+              -target arm64-apple-ios15.0 \
+              -isysroot "$SDK_PATH" \
+              -std=c++14 \
+              -Wall -Wextra -Werror \
+              -DUSE_PORTABLE_C=1 \
+              -DPRAGMA_ONCE=1 \
+              -I "upstream/SeriousSamClassic/Sam${encounter}/Sources" \
+              -fsyntax-only Tests/IOSPlatformProbe.cpp
+            echo "Sam${encounter}: platform probe passed" | tee -a artifacts/ios-platform-probe.txt
+          done
+
+      - name: Upload iPhoneOS platform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seriousios-iphoneos-platform-${{ github.sha }}
+          path: artifacts/ios-platform-probe.txt
+          if-no-files-found: warn
+          retention-days: 14
