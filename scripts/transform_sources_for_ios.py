@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 ENCOUNTERS = ("TFE", "TSE")
@@ -17,6 +18,21 @@ def replace_exact(path: Path, old: str, new: str, expected: int = 1) -> int:
             f"{path}: expected {expected} occurrences of {old!r}, found {count}"
         )
     path.write_text(text.replace(old, new), encoding="utf-8")
+    return count
+
+
+def replace_identifier(path: Path, old: str, new: str, minimum: int = 1) -> int:
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(rf"\b{re.escape(old)}\b")
+    count = len(pattern.findall(text))
+    if count < minimum:
+        raise RuntimeError(
+            f"{path}: expected at least {minimum} occurrences of {old!r}, found {count}"
+        )
+    transformed = pattern.sub(new, text)
+    if pattern.search(transformed):
+        raise RuntimeError(f"{path}: failed to replace every occurrence of {old!r}")
+    path.write_text(transformed, encoding="utf-8")
     return count
 
 
@@ -56,6 +72,18 @@ def emit_shader_math_helpers(path: Path) -> int:
     for old, new in replacements:
         changed += replace_exact(path, old, new)
     return changed
+
+
+def internalize_tfe_light_coordinate_tables(path: Path) -> int:
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(r"(?m)^FLOAT (_f[A-Za-z0-9]+Coordinates\s*\[)")
+    count = len(pattern.findall(text))
+    if count != 10:
+        raise RuntimeError(
+            f"{path}: expected 10 TFE light coordinate tables, found {count}"
+        )
+    path.write_text(pattern.sub(r"static FLOAT \1", text), encoding="utf-8")
+    return count
 
 
 def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
@@ -99,6 +127,20 @@ def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
 
     rm_render = root / "Engine/Ska/RMRender.cpp"
     counts["shader_math_exports"] = emit_shader_math_helpers(rm_render)
+
+    camera = root / "GameMP/Camera.cpp"
+    counts["camera_initialized_symbol"] = replace_identifier(
+        camera,
+        "_bInitialized",
+        "_bCameraInitialized",
+        minimum=2,
+    )
+
+    if encounter == "TFE":
+        light_fixes = root / "Entities/Common/LightFixes.h"
+        counts["light_coordinate_internal_linkage"] = (
+            internalize_tfe_light_coordinate_tables(light_fixes)
+        )
 
     return counts
 
