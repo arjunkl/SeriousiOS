@@ -1,8 +1,8 @@
 #include "SeriousIOSApplicationLifecycle.h"
 #include "SeriousIOSPlatformBridge.h"
 
-#include <Engine/Base/Stream.h>
 #include <Engine/Engine.h>
+#include <Engine/Base/Stream.h>
 #include <GameMP/Game.h>
 #include <SeriousSam/Menu.h>
 #include <SeriousSam/SeriousSam.h>
