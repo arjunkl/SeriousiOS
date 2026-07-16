@@ -112,6 +112,11 @@ extern "C" const char* SeriousIOS_ApplicationGetStage(void) {
     return gApplicationStage;
 }
 
+extern "C" void SeriousIOS_ApplicationRecordFatalError(const char* message) {
+    setError(message == nullptr ? "Legacy FatalError terminated the process" : message);
+    writeCheckpoint("fatal");
+}
+
 extern "C" bool SeriousIOS_ApplicationInitialize(void) {
     if (gApplicationInitialized) {
         return true;
