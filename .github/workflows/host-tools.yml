@@ -29,6 +29,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/build_host_tools.sh
           bash -n scripts/smoke_generate_entities.sh
+          python3 -m py_compile scripts/report_dependency_graph.py
 
       - name: Install generator dependencies
         shell: bash
@@ -45,6 +46,14 @@ jobs:
           git clone --filter=blob:none "$SERIOUSSAMCLASSIC_REPOSITORY" upstream/SeriousSamClassic
           git -C upstream/SeriousSamClassic checkout --detach "$SERIOUSSAMCLASSIC_COMMIT"
           test "$(git -C upstream/SeriousSamClassic rev-parse HEAD)" = "$SERIOUSSAMCLASSIC_COMMIT"
+
+      - name: Record upstream dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/report_dependency_graph.py \
+            upstream/SeriousSamClassic \
+            build/dependency-graph
 
       - name: Build native Entity Class Compilers
         shell: bash
@@ -69,6 +78,7 @@ jobs:
         with:
           name: seriousios-host-tools-${{ github.sha }}
           path: |
+            build/dependency-graph
             build/host-tools
             build/generated-smoke
           if-no-files-found: error
