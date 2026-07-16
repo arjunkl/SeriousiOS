@@ -17,6 +17,9 @@ static NSString* const kEncounterName = @"The Second Encounter";
 #error Define SERIOUSIOS_TFE or SERIOUSIOS_TSE
 #endif
 
+@class SeriousIOSRenderView;
+static void SeriousIOSPresent(void* context);
+
 namespace {
 
 bool registerRuntimeSymbols() noexcept {
@@ -32,6 +35,7 @@ bool registerRuntimeSymbols() noexcept {
 } // namespace
 
 @interface SeriousIOSRenderView : UIView
+- (void)presentDrawable;
 @end
 
 @implementation SeriousIOSRenderView {
@@ -156,12 +160,12 @@ bool registerRuntimeSymbols() noexcept {
     [_context presentRenderbuffer:GL_RENDERBUFFER];
 }
 
+@end
+
 static void SeriousIOSPresent(void* context) {
     SeriousIOSRenderView* view = (__bridge SeriousIOSRenderView*)context;
     [view presentDrawable];
 }
-
-@end
 
 @interface SeriousIOSViewController : UIViewController
 @end
