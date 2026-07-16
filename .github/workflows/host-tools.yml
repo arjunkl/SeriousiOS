@@ -1,0 +1,75 @@
+name: SeriousiOS Host Tool Gate
+
+on:
+  push:
+    branches:
+      - main
+      - agent/**
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke-ecc:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout SeriousiOS
+        uses: actions/checkout@v4
+
+      - name: Load pinned revisions
+        shell: bash
+        run: cat Dependencies.lock >> "$GITHUB_ENV"
+
+      - name: Validate scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/build_host_tools.sh
+          bash -n scripts/smoke_generate_entities.sh
+
+      - name: Install generator dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install bison flex
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+
+      - name: Checkout pinned SeriousSamClassic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "$SERIOUSSAMCLASSIC_REPOSITORY" upstream/SeriousSamClassic
+          git -C upstream/SeriousSamClassic checkout --detach "$SERIOUSSAMCLASSIC_COMMIT"
+          test "$(git -C upstream/SeriousSamClassic rev-parse HEAD)" = "$SERIOUSSAMCLASSIC_COMMIT"
+
+      - name: Build native Entity Class Compilers
+        shell: bash
+        env:
+          FLEX_BIN: /opt/homebrew/opt/flex/bin/flex
+          BISON_BIN: /opt/homebrew/opt/bison/bin/bison
+        run: |
+          set -euo pipefail
+          scripts/build_host_tools.sh upstream/SeriousSamClassic build/host-tools
+
+      - name: Generate representative TFE and TSE entities
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/smoke_generate_entities.sh \
+            upstream/SeriousSamClassic \
+            build/host-tools \
+            build/generated-smoke
+
+      - name: Upload host-tool evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: seriousios-host-tools-${{ github.sha }}
+          path: |
+            build/host-tools
+            build/generated-smoke
+          if-no-files-found: error
+          retention-days: 14
