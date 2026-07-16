@@ -32,10 +32,13 @@ for patch in "${patches[@]}"; do
   git -C "$UPSTREAM" apply "$patch"
 done
 
+python3 "$REPOSITORY_ROOT/scripts/instrument_ios_display_mode.py" "$UPSTREAM"
+
 git -C "$UPSTREAM" diff --check
 {
   echo "base=$(git -C "$UPSTREAM" rev-parse HEAD)"
   for patch in "${patches[@]}"; do
     echo "$(basename "$patch")=$(shasum -a 256 "$patch" | awk '{print $1}')"
   done
+  echo "instrument_ios_display_mode.py=$(shasum -a 256 "$REPOSITORY_ROOT/scripts/instrument_ios_display_mode.py" | awk '{print $1}')"
 } | tee "$UPSTREAM/seriousios-patches.manifest"
