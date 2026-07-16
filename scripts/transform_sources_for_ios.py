@@ -145,6 +145,71 @@ def configure_engine_ios_paths(path: Path) -> int:
     return changes
 
 
+def adapt_serioussam_application(path: Path) -> int:
+    changes = 0
+    changes += replace_exact(
+        path,
+        "CGame *_pGame = NULL;",
+        '''#ifdef PLATFORM_IOS
+extern CGame *_pGame;
+#else
+CGame *_pGame = NULL;
+#endif''',
+    )
+    changes += replace_exact(
+        path,
+        '''int main(int argc, char **argv)
+{
+  #ifdef BETAEXPIRE
+    // !!! FIXME: This is Unix-centric (at least, non-win32) if put in main().
+    check_beta();
+  #endif
+
+  #ifdef PROFILING_ENABLED
+    // !!! FIXME: This is Unix-centric (at least, non-win32) if put in main().
+    warn_profiling();
+  #endif
+
+  argv0 = argv[0];
+
+  CTString cmdLine;
+  for (int i = 1; i < argc; i++) {
+    cmdLine += " \\"";
+    cmdLine += argv[i];
+    cmdLine += "\\"";
+  }
+
+  return(CommonMainline(NULL, NULL, (char *) ((const char *) cmdLine), 0));
+}''',
+        '''#ifndef PLATFORM_IOS
+int main(int argc, char **argv)
+{
+  #ifdef BETAEXPIRE
+    // !!! FIXME: This is Unix-centric (at least, non-win32) if put in main().
+    check_beta();
+  #endif
+
+  #ifdef PROFILING_ENABLED
+    // !!! FIXME: This is Unix-centric (at least, non-win32) if put in main().
+    warn_profiling();
+  #endif
+
+  argv0 = argv[0];
+
+  CTString cmdLine;
+  for (int i = 1; i < argc; i++) {
+    cmdLine += " \\"";
+    cmdLine += argv[i];
+    cmdLine += "\\"";
+  }
+
+  return(CommonMainline(NULL, NULL, (char *) ((const char *) cmdLine), 0));
+}
+#endif''',
+    )
+    return changes
+
+
 def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
     root = upstream / f"Sam{encounter}" / "Sources"
     if not root.is_dir():
@@ -172,6 +237,11 @@ def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
 
     engine_source = root / "Engine/Engine.cpp"
     counts["ios_path_contract"] = configure_engine_ios_paths(engine_source)
+
+    serioussam_source = root / "SeriousSam/SeriousSam.cpp"
+    counts["ios_application_ownership"] = adapt_serioussam_application(
+        serioussam_source
+    )
 
     zconf = root / "Engine/zlib/zconf.h"
     counts["zlib_byte_type"] = replace_exact(
