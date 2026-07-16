@@ -117,9 +117,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/apply_upstream_patches.sh upstream/SeriousSamClassic
-          python3 scripts/transform_cmake_for_ios.py upstream/SeriousSamClassic
           mkdir -p build/cmake-model
+          bash scripts/apply_upstream_patches.sh upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/apply-patches.log
+
+          set +e
+          python3 scripts/transform_cmake_for_ios.py upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/transform.log
+          transform_status=${PIPESTATUS[0]}
+          set -e
+          if [[ $transform_status -ne 0 ]]; then
+            exit "$transform_status"
+          fi
+
           git -C upstream/SeriousSamClassic diff --check
           git -C upstream/SeriousSamClassic diff --binary > build/cmake-model/seriousios-upstream.patch
           git -C upstream/SeriousSamClassic status --short > build/cmake-model/upstream-status.txt
