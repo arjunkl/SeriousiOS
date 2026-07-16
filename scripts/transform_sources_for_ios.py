@@ -28,7 +28,7 @@ def disable_armv7_neon_on_ios(path: Path) -> int:
     for line in lines:
         stripped = line.lstrip()
         if (
-            stripped.startswith("#if")
+            stripped.startswith(("#if", "#elif"))
             and "__ARM_NEON__" in line
             and "PLATFORM_IOS" not in line
         ):
