@@ -8,6 +8,8 @@
 
 #include <SDL.h>
 
+#include <cstdio>
+
 extern BOOL Init(HINSTANCE instance, int showCommand, CTString commandLine);
 extern void End(void);
 extern void DoGame(void);
@@ -22,6 +24,45 @@ namespace {
 
 bool gApplicationInitialized = false;
 bool gApplicationSuspended = false;
+char gApplicationError[1024] = {};
+
+void setError(const char* message) {
+    std::snprintf(
+        gApplicationError,
+        sizeof(gApplicationError),
+        "%s",
+        message == nullptr ? "Unknown Serious Sam application failure" : message);
+    gApplicationError[sizeof(gApplicationError) - 1] = '\0';
+}
+
+void writeCheckpoint(const char* state) {
+    const char* temporaryPath = SeriousIOS_GetTemporaryPath();
+    if (temporaryPath == nullptr || *temporaryPath == '\0') {
+        return;
+    }
+
+    char markerPath[2048] = {};
+    std::snprintf(
+        markerPath,
+        sizeof(markerPath),
+        "%sapplication-runtime-checkpoint.txt",
+        temporaryPath);
+    markerPath[sizeof(markerPath) - 1] = '\0';
+
+    FILE* marker = std::fopen(markerPath, "wb");
+    if (marker == nullptr) {
+        return;
+    }
+    std::fprintf(marker, "state=%s\n", state == nullptr ? "unknown" : state);
+    std::fprintf(marker, "error=%s\n", gApplicationError);
+    std::fclose(marker);
+}
+
+bool fail(const char* message) {
+    setError(message);
+    writeCheckpoint("failed");
+    return false;
+}
 
 void configureInitialDisplayMode() {
     int width = 0;
@@ -48,9 +89,14 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
     if (gApplicationInitialized) {
         return true;
     }
-    if (!SeriousIOS_ArePathsConfigured()
-        || SeriousIOS_MakeGLContextCurrent() != 0) {
-        return false;
+
+    gApplicationError[0] = '\0';
+    writeCheckpoint("starting");
+    if (!SeriousIOS_ArePathsConfigured()) {
+        return fail("SeriousiOS paths were not configured before application startup");
+    }
+    if (SeriousIOS_MakeGLContextCurrent() != 0) {
+        return fail("SeriousiOS could not activate the EAGL context before application startup");
     }
 
     configureInitialDisplayMode();
@@ -58,10 +104,12 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
 
     try {
         if (!Init(nullptr, 0, CTString(""))) {
-            return false;
+            return fail("The upstream Serious Sam Init function returned false");
         }
+    } catch (const char* error) {
+        return fail(error);
     } catch (...) {
-        return false;
+        return fail("Serious Sam application initialization threw an unknown exception");
     }
 
     _bRunning = TRUE;
@@ -72,6 +120,7 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
     bMenuRendering = TRUE;
     gApplicationSuspended = false;
     gApplicationInitialized = true;
+    writeCheckpoint("initialized");
     return true;
 }
 
@@ -79,14 +128,23 @@ extern "C" bool SeriousIOS_ApplicationFrame(void) {
     if (!gApplicationInitialized || gApplicationSuspended || !_bRunning) {
         return false;
     }
-    if (SeriousIOS_MakeGLContextCurrent() != 0 || _pGame == nullptr) {
-        return false;
+    if (SeriousIOS_MakeGLContextCurrent() != 0) {
+        return fail("SeriousiOS lost its EAGL context before an application frame");
+    }
+    if (_pGame == nullptr) {
+        return fail("Serious Sam application frame has no Game object");
     }
 
-    _bWindowChanging = FALSE;
-    UpdateInputEnabledState();
-    _pGame->gm_bMenuOn = bMenuActive;
-    DoGame();
+    try {
+        _bWindowChanging = FALSE;
+        UpdateInputEnabledState();
+        _pGame->gm_bMenuOn = bMenuActive;
+        DoGame();
+    } catch (const char* error) {
+        return fail(error);
+    } catch (...) {
+        return fail("Serious Sam application frame threw an unknown exception");
+    }
     return _bRunning != FALSE;
 }
 
@@ -98,6 +156,7 @@ extern "C" void SeriousIOS_ApplicationSuspend(void) {
     if (_pNetwork != nullptr) {
         _pNetwork->SetLocalPause(TRUE);
     }
+    writeCheckpoint("suspended");
 }
 
 extern "C" void SeriousIOS_ApplicationResume(void) {
@@ -108,6 +167,7 @@ extern "C" void SeriousIOS_ApplicationResume(void) {
         _pNetwork->SetLocalPause(FALSE);
     }
     gApplicationSuspended = false;
+    writeCheckpoint("initialized");
 }
 
 extern "C" void SeriousIOS_ApplicationShutdown(void) {
@@ -120,10 +180,19 @@ extern "C" void SeriousIOS_ApplicationShutdown(void) {
     if (_pGame != nullptr && _pGame->gm_bGameOn) {
         _pGame->StopGame();
     }
-    End();
+    try {
+        End();
+    } catch (...) {
+        setError("Serious Sam application shutdown threw an exception");
+    }
     gApplicationInitialized = false;
+    writeCheckpoint("stopped");
 }
 
 extern "C" bool SeriousIOS_ApplicationIsInitialized(void) {
     return gApplicationInitialized;
+}
+
+extern "C" const char* SeriousIOS_ApplicationGetError(void) {
+    return gApplicationError;
 }
