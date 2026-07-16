@@ -14,10 +14,10 @@ EVIDENCE=$(cd "$EVIDENCE" && pwd)
 
 case "$ENCOUNTER" in
   TFE)
-    targets=(engine_safemath Engine Game Shaders Entities)
+    targets=(engine_safemath Engine Game Shaders Entities SeriousIOSApplication)
     ;;
   TSE)
-    targets=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP)
+    targets=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP SeriousIOSApplicationMP)
     ;;
   *)
     echo "encounter must be TFE or TSE" >&2
@@ -56,7 +56,7 @@ for target in "${targets[@]}"; do
 done
 
 {
-  echo "# ${ENCOUNTER} iOS runtime archive build"
+  echo "# ${ENCOUNTER} iOS runtime and application archive build"
   echo
   echo "Configuration: \`${configuration}\`"
   echo
