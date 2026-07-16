@@ -36,12 +36,18 @@ jobs:
       - name: Verify architecture assumptions
         run: python3 scripts/audit_upstream.py upstream/SeriousSamClassic
 
-      - name: Verify iOS bridge is portable C++
+      - name: Verify portable iOS bridge code
         shell: bash
         run: |
           set -euo pipefail
           clang++ -std=c++17 -Wall -Wextra -Werror -I Sources/Platform/iOS \
             -fsyntax-only Sources/Platform/iOS/SeriousIOSInputBridge.cpp
+          clang++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -I Sources/Platform/iOS \
+            Sources/Platform/iOS/SeriousIOSStaticRegistry.cpp \
+            Tests/StaticRegistryTests.cpp \
+            -o /tmp/seriousios-static-registry-tests
+          /tmp/seriousios-static-registry-tests
 
       - name: Record audit artifact
         shell: bash
