@@ -1,6 +1,7 @@
 #include "SeriousIOSApplicationLifecycle.h"
 #include "SeriousIOSPlatformBridge.h"
 
+#include <Engine/Base/Stream.h>
 #include <Engine/Engine.h>
 #include <GameMP/Game.h>
 #include <SeriousSam/Menu.h>
@@ -25,7 +26,9 @@ namespace {
 
 bool gApplicationInitialized = false;
 bool gApplicationSuspended = false;
+bool gApplicationStartupFailed = false;
 bool gFirstFrameCompleted = false;
+bool gStreamHandlingEnabled = false;
 char gApplicationError[1024] = {};
 char gApplicationStage[256] = "idle";
 
@@ -77,6 +80,11 @@ bool fail(const char* message) {
     return false;
 }
 
+bool failStartup(const char* message) {
+    gApplicationStartupFailed = true;
+    return fail(message);
+}
+
 void configureInitialDisplayMode() {
     int width = 0;
     int height = 0;
@@ -96,6 +104,26 @@ void configureInitialDisplayMode() {
     sam_bBorderLessActive = TRUE;
 }
 
+void enableMainThreadStreamHandling() {
+    if (gStreamHandlingEnabled) {
+        return;
+    }
+
+    SeriousIOS_ApplicationSetStage("enable-stream-handling");
+    CTStream::EnableStreamHandling();
+    gStreamHandlingEnabled = true;
+}
+
+void disableMainThreadStreamHandling() {
+    if (!gStreamHandlingEnabled) {
+        return;
+    }
+
+    SeriousIOS_ApplicationSetStage("disable-stream-handling");
+    CTStream::DisableStreamHandling();
+    gStreamHandlingEnabled = false;
+}
+
 } // namespace
 
 extern "C" void SeriousIOS_ApplicationSetStage(const char* stage) {
@@ -113,6 +141,7 @@ extern "C" const char* SeriousIOS_ApplicationGetStage(void) {
 }
 
 extern "C" void SeriousIOS_ApplicationRecordFatalError(const char* message) {
+    gApplicationStartupFailed = true;
     setError(message == nullptr ? "Legacy FatalError terminated the process" : message);
     writeCheckpoint("fatal");
 }
@@ -121,17 +150,28 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
     if (gApplicationInitialized) {
         return true;
     }
+    if (gApplicationStartupFailed) {
+        return fail(
+            "A previous startup attempt left partially initialized engine state; close and reopen the app before retrying");
+    }
 
     gApplicationError[0] = '\0';
     gFirstFrameCompleted = false;
     SeriousIOS_ApplicationSetStage("application-entry");
     if (!SeriousIOS_ArePathsConfigured()) {
-        return fail("SeriousiOS paths were not configured before application startup");
+        return failStartup("SeriousiOS paths were not configured before application startup");
     }
     SeriousIOS_ApplicationSetStage("activate-eagl-context");
     if (SeriousIOS_MakeGLContextCurrent() != 0) {
-        return fail("SeriousiOS could not activate the EAGL context before application startup");
+        return failStartup("SeriousiOS could not activate the EAGL context before application startup");
     }
+
+    // The desktop executable wraps the entire SubMain lifetime in
+    // CTSTREAM_BEGIN/CTSTREAM_END. UIKit owns the process loop on iOS, so it
+    // must reproduce that same main-thread contract explicitly. This remains
+    // enabled across Init, every frame, and End because streams may be opened
+    // from GRO archives throughout the application session.
+    enableMainThreadStreamHandling();
 
     SeriousIOS_ApplicationSetStage("configure-initial-display-mode");
     configureInitialDisplayMode();
@@ -140,13 +180,13 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
     try {
         SeriousIOS_ApplicationSetStage("upstream-init-entry");
         if (!Init(nullptr, 0, CTString(""))) {
-            return fail("The upstream Serious Sam Init function returned false");
+            return failStartup("The upstream Serious Sam Init function returned false");
         }
         SeriousIOS_ApplicationSetStage("upstream-init-returned");
     } catch (const char* error) {
-        return fail(error);
+        return failStartup(error);
     } catch (...) {
-        return fail("Serious Sam application initialization threw an unknown exception");
+        return failStartup("Serious Sam application initialization threw an unknown exception");
     }
 
     _bRunning = TRUE;
@@ -238,6 +278,10 @@ extern "C" void SeriousIOS_ApplicationShutdown(void) {
     } catch (...) {
         setError("Serious Sam application shutdown threw an exception");
     }
+
+    // Match CTSTREAM_END only after upstream End has released all application
+    // streams and stream-backed resources.
+    disableMainThreadStreamHandling();
     gApplicationInitialized = false;
     SeriousIOS_ApplicationSetStage("stopped");
     writeCheckpoint("stopped");
