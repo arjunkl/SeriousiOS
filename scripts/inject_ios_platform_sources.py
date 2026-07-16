@@ -52,6 +52,16 @@ endif()
         f"{path}: dynamic loader replacement",
     )
 
+    text = replace_once(
+        text,
+        '''        ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSMainWindow.cpp
+        SeriousSam/Menu.cpp''',
+        '''        ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSMainWindow.cpp
+        ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSApplicationLifecycle.cpp
+        SeriousSam/Menu.cpp''',
+        f"{path}: application lifecycle injection",
+    )
+
     path.write_text(text, encoding="utf-8")
 
 
