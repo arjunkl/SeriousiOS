@@ -235,15 +235,14 @@ def transform(path: Path) -> None:
         @"Unknown application startup failure");
     _startupLabel.textColor = UIColor.systemRedColor;
     _startupLabel.text = [NSString stringWithFormat:
-        @"SeriousiOS %@\\nApplication startup failed\\nStage: %s\\n%@",
+        @"SeriousiOS %@\\nApplication startup failed\\nStage: %s\\n%@\\n\\nClose and reopen the app before retrying",
         kEncounterName,
         SeriousIOS_ApplicationGetStage(),
         errorText];
-    _launchButton.enabled = YES;
-    _launchButton.hidden = NO;
-    [_launchButton setTitle:@"Retry diagnostic launch" forState:UIControlStateNormal];
-    _importButton.enabled = YES;
-    _importButton.hidden = NO;
+    _launchButton.enabled = NO;
+    _launchButton.hidden = YES;
+    _importButton.enabled = NO;
+    _importButton.hidden = YES;
     NSLog(@"SeriousiOS application startup failed for %@ at %s: %@",
         kEncounterName,
         SeriousIOS_ApplicationGetStage(),
