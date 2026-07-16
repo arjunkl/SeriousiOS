@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-generate-configure-and-compile:
     runs-on: macos-15
-    timeout-minutes: 75
+    timeout-minutes: 85
     steps:
       - name: Checkout SeriousiOS
         uses: actions/checkout@v4
@@ -32,12 +32,15 @@ jobs:
           bash -n scripts/generate_all_sources.sh
           bash -n scripts/apply_upstream_patches.sh
           bash -n scripts/build_ios_runtime_archives.sh
+          bash -n scripts/dry_link_ios_runtime.sh
           python3 -m py_compile scripts/report_dependency_graph.py
           python3 -m py_compile scripts/generate_static_entity_registry.py
+          python3 -m py_compile scripts/generate_static_runtime_registry.py
           python3 -m py_compile scripts/transform_sources_for_ios.py
           python3 -m py_compile scripts/transform_cmake_for_ios.py
           python3 -m py_compile scripts/inject_ios_platform_sources.py
           python3 -m py_compile scripts/report_cmake_model.py
+          python3 -m py_compile scripts/report_ios_link.py
 
       - name: Install generator dependencies
         shell: bash
@@ -93,7 +96,7 @@ jobs:
             build/host-tools \
             build/generated-all
 
-      - name: Generate explicit static entity registries
+      - name: Generate explicit static runtime registries
         shell: bash
         run: |
           set -euo pipefail
@@ -102,19 +105,28 @@ jobs:
             build/generated-all/TFE \
             TFE \
             build/static-registries/SeriousIOSTFEEntityRegistry.cpp \
-            --manifest build/static-registries/TFE.json
+            --manifest build/static-registries/TFE-entities.json
           python3 scripts/generate_static_entity_registry.py \
             build/generated-all/TSE \
             TSE \
             build/static-registries/SeriousIOSTSEEntityRegistry.cpp \
-            --manifest build/static-registries/TSE.json
+            --manifest build/static-registries/TSE-entities.json
+          python3 scripts/generate_static_runtime_registry.py \
+            upstream/SeriousSamClassic \
+            TFE \
+            build/static-registries/SeriousIOSTFERuntimeRegistry.cpp \
+            --manifest build/static-registries/TFE-runtime.json
+          python3 scripts/generate_static_runtime_registry.py \
+            upstream/SeriousSamClassic \
+            TSE \
+            build/static-registries/SeriousIOSTSERuntimeRegistry.cpp \
+            --manifest build/static-registries/TSE-runtime.json
 
-          clang++ -std=c++17 -Wall -Wextra -Werror \
-            -I Sources/Platform/iOS \
-            -fsyntax-only build/static-registries/SeriousIOSTFEEntityRegistry.cpp
-          clang++ -std=c++17 -Wall -Wextra -Werror \
-            -I Sources/Platform/iOS \
-            -fsyntax-only build/static-registries/SeriousIOSTSEEntityRegistry.cpp
+          for source in build/static-registries/*.cpp; do
+            clang++ -std=c++17 -Wall -Wextra -Werror \
+              -I Sources/Platform/iOS \
+              -fsyntax-only "$source"
+          done
 
       - name: Transform upstream source and CMake graphs for iOS
         shell: bash
@@ -194,7 +206,34 @@ jobs:
           done
           exit "$overall_status"
 
-      - name: Upload architecture, generation, and compilation evidence
+      - name: Force-load each encounter and report final link closure
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p build/link-evidence
+          for encounter in TFE TSE; do
+            entity="build/static-registries/SeriousIOS${encounter}EntityRegistry.cpp"
+            runtime="build/static-registries/SeriousIOS${encounter}RuntimeRegistry.cpp"
+            status=0
+            bash scripts/dry_link_ios_runtime.sh \
+              "build/cmake-model/${encounter}" \
+              "$encounter" \
+              "$entity" \
+              "$runtime" \
+              build/link-evidence || status=$?
+            echo "$status" > "build/link-evidence/${encounter}-driver-status.txt"
+
+            log="build/link-evidence/${encounter}-dry-link.log"
+            if [[ ! -f "$log" ]]; then
+              echo "Dry-link driver failed before invoking the linker (status ${status})." > "$log"
+            fi
+            python3 scripts/report_ios_link.py \
+              "$log" \
+              "$encounter" \
+              "build/link-evidence/${encounter}-link-report.json"
+          done
+
+      - name: Upload architecture, generation, compilation, and link evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -221,5 +260,6 @@ jobs:
             build/cmake-model/TSE/CMakeFiles/TargetDirectories.txt
             build/cmake-model/TSE/SeriousEngine.xcodeproj/project.pbxproj
             build/archive-evidence
+            build/link-evidence
           if-no-files-found: warn
           retention-days: 14
