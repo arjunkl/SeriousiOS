@@ -16,6 +16,7 @@ EVIDENCE=$(cd "$EVIDENCE" && pwd)
 REPOSITORY_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PLATFORM_ROOT="$REPOSITORY_ROOT/Sources/Platform/iOS"
 APP_SOURCE="$REPOSITORY_ROOT/Sources/App/iOS/SeriousIOSHost.mm"
+BUILD_IDENTIFIER=${GITHUB_SHA:-local}
 
 case "$ENCOUNTER" in
   TFE)
@@ -49,6 +50,7 @@ DIAGNOSTIC_APP_SOURCE="$OBJECT_DIR/SeriousIOSHost-Diagnostic.mm"
 cp "$APP_SOURCE" "$DIAGNOSTIC_APP_SOURCE"
 python3 "$REPOSITORY_ROOT/scripts/transform_ios_host_for_diagnostics.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
+  --build-id "$BUILD_IDENTIFIER" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-diagnostic-host-transform.log"
 
 common_compile=(
