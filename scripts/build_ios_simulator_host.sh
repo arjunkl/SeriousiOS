@@ -22,13 +22,13 @@ case "$ENCOUNTER" in
     define=SERIOUSIOS_TFE
     display_name="Serious Sam: The First Encounter"
     bundle_id="com.arjunkl.seriousios.simulator.tfe"
-    archives=(engine_safemath Engine Game Shaders Entities)
+    archives=(engine_safemath Engine Game Shaders Entities SeriousIOSApplication)
     ;;
   TSE)
     define=SERIOUSIOS_TSE
     display_name="Serious Sam: The Second Encounter"
     bundle_id="com.arjunkl.seriousios.simulator.tse"
-    archives=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP)
+    archives=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP SeriousIOSApplicationMP)
     ;;
   *)
     echo "encounter must be TFE or TSE" >&2
