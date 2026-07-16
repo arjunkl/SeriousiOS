@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make licensed-data startup manual and expose the previous durable checkpoint."""
+"""Make licensed-data startup manual and use the Serious Engine ES1 bridge."""
 
 from __future__ import annotations
 
@@ -14,8 +14,85 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def replace_count(text: str, old: str, new: str, expected: int, label: str) -> str:
+    count = text.count(old)
+    if count != expected:
+        raise RuntimeError(f"{label}: expected {expected} matches, found {count}")
+    return text.replace(old, new)
+
+
+def transform_opengles1(text: str) -> str:
+    text = replace_once(
+        text,
+        '#import <OpenGLES/ES2/gl.h>\n',
+        '#import <OpenGLES/ES1/gl.h>\n#import <OpenGLES/ES1/glext.h>\n',
+        "OpenGL ES import",
+    )
+    text = replace_once(
+        text,
+        '[[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2]',
+        '[[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES1]',
+        "OpenGL ES context API",
+    )
+    text = replace_once(
+        text,
+        '@"Unable to create an OpenGL ES 2 context"',
+        '@"Unable to create an OpenGL ES 1.1 context"',
+        "OpenGL ES assertion",
+    )
+
+    replacements = (
+        ("glGenFramebuffers(", "glGenFramebuffersOES(", 1),
+        ("glBindFramebuffer(", "glBindFramebufferOES(", 1),
+        ("glGenRenderbuffers(", "glGenRenderbuffersOES(", 2),
+        ("glBindRenderbuffer(", "glBindRenderbufferOES(", 3),
+        ("glGetRenderbufferParameteriv(", "glGetRenderbufferParameterivOES(", 2),
+        ("glFramebufferRenderbuffer(", "glFramebufferRenderbufferOES(", 2),
+        ("glRenderbufferStorage(", "glRenderbufferStorageOES(", 1),
+        ("glCheckFramebufferStatus(", "glCheckFramebufferStatusOES(", 1),
+        ("glDeleteRenderbuffers(", "glDeleteRenderbuffersOES(", 2),
+        ("glDeleteFramebuffers(", "glDeleteFramebuffersOES(", 1),
+        ("GL_FRAMEBUFFER_COMPLETE", "GL_FRAMEBUFFER_COMPLETE_OES", 1),
+        ("GL_COLOR_ATTACHMENT0", "GL_COLOR_ATTACHMENT0_OES", 1),
+        ("GL_DEPTH_ATTACHMENT", "GL_DEPTH_ATTACHMENT_OES", 1),
+        ("GL_DEPTH_COMPONENT16", "GL_DEPTH_COMPONENT16_OES", 1),
+        ("GL_RENDERBUFFER_WIDTH", "GL_RENDERBUFFER_WIDTH_OES", 1),
+        ("GL_RENDERBUFFER_HEIGHT", "GL_RENDERBUFFER_HEIGHT_OES", 1),
+        ("GL_FRAMEBUFFER", "GL_FRAMEBUFFER_OES", 4),
+        ("GL_RENDERBUFFER", "GL_RENDERBUFFER_OES", 10),
+    )
+    for old, new, expected in replacements:
+        text = replace_count(text, old, new, expected, f"ES1 replacement {old}")
+
+    text = replace_once(
+        text,
+        '''    NSAssert(
+        glCheckFramebufferStatusOES(GL_FRAMEBUFFER_OES) == GL_FRAMEBUFFER_COMPLETE_OES,
+        @"SeriousiOS EAGL framebuffer is incomplete");
+
+    glViewport(0, 0, _drawableWidth, _drawableHeight);''',
+        '''    NSAssert(
+        glCheckFramebufferStatusOES(GL_FRAMEBUFFER_OES) == GL_FRAMEBUFFER_COMPLETE_OES,
+        @"SeriousiOS EAGL framebuffer is incomplete");
+
+    if (!SeriousIOS_ValidateOpenGLCompatibility()) {
+        _startupScheduled = YES;
+        _startupLabel.textColor = UIColor.systemRedColor;
+        _startupLabel.text = [NSString stringWithFormat:
+            @"SeriousiOS %@\\nOpenGL ES 1.1 compatibility validation failed\\n%s",
+            kEncounterName,
+            SeriousIOS_GetOpenGLCompatibilityError()];
+        return;
+    }
+
+    glViewport(0, 0, _drawableWidth, _drawableHeight);''',
+        "OpenGL ES compatibility validation",
+    )
+    return text
+
+
 def transform(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
+    text = transform_opengles1(path.read_text(encoding="utf-8"))
 
     text = replace_once(
         text,
@@ -268,7 +345,7 @@ def main() -> int:
     if not source.is_file():
         raise SystemExit(f"host source does not exist: {source}")
     transform(source)
-    print(f"Applied crash-loop-safe diagnostic host transform to {source}")
+    print(f"Applied OpenGL ES 1.1 and crash-loop-safe diagnostics to {source}")
     return 0
 
 
