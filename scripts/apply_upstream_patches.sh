@@ -16,7 +16,11 @@ if [[ -n "$(git -C "$UPSTREAM" status --porcelain)" ]]; then
   exit 1
 fi
 
-mapfile -t patches < <(find "$PATCH_DIR" -maxdepth 1 -type f -name '*.patch' | LC_ALL=C sort)
+patches=()
+while IFS= read -r patch; do
+  patches+=("$patch")
+done < <(find "$PATCH_DIR" -maxdepth 1 -type f -name '*.patch' | LC_ALL=C sort)
+
 if [[ ${#patches[@]} -eq 0 ]]; then
   echo "no patches found in $PATCH_DIR" >&2
   exit 1
