@@ -13,6 +13,8 @@ SYMBOL_RE = re.compile(
     r'([A-Za-z_][A-Za-z0-9_]*_DLLClass)\s*;'
 )
 ENTITY_RE = re.compile(r"(?m)^\s*entity\(\s*([^\s)#]+)\s*\)")
+BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+LINE_COMMENT_RE = re.compile(r"//.*?$​", re.MULTILINE)
 
 ENCOUNTER_PACKAGES = {
     "TFE": ("Engine/Classes/", "Entities/"),
@@ -48,6 +50,16 @@ def selected_entities(upstream: Path, encounter: str) -> list[str]:
     return selected
 
 
+def is_comment_only_source(upstream: Path, encounter: str, entity: str) -> bool:
+    source = upstream / f"Sam{encounter}" / "Sources" / f"{entity}.es"
+    if not source.is_file():
+        return False
+    text = source.read_text(encoding="utf-8", errors="ignore")
+    text = BLOCK_COMMENT_RE.sub("", text)
+    text = LINE_COMMENT_RE.sub("", text)
+    return not text.strip()
+
+
 def discover_symbols(
     generated_root: Path,
     upstream: Path,
@@ -72,10 +84,12 @@ def discover_symbols(
             symbol_by_entity[entity] = matches[0]
             continue
 
-        if not matches and entity.startswith("Engine/Classes/"):
-            # BaseEvents and similar generated support units are compiled into the
-            # Engine archive but are not runtime-loadable entity classes. They must
-            # not be registered as dlsym replacements.
+        if not matches and (
+            entity.startswith("Engine/Classes/")
+            or is_comment_only_source(upstream, encounter, entity)
+        ):
+            # Generated event definitions and comment-only placeholders are compiled
+            # into the selected archive graph but do not expose runtime entity classes.
             support_units.append(entity)
             continue
 
@@ -94,13 +108,18 @@ def discover_symbols(
         repeated = {symbol: paths for symbol, paths in duplicates.items() if len(paths) > 1}
         problems.append(f"duplicate entity exports: {repeated}")
 
-    game_entity_count = sum(1 for entity in entities if entity.startswith(game_prefix))
+    support_set = set(support_units)
+    game_entity_count = sum(
+        1
+        for entity in entities
+        if entity.startswith(game_prefix) and entity not in support_set
+    )
     registered_game_count = sum(
         1 for entity in symbol_by_entity if entity.startswith(game_prefix)
     )
     if registered_game_count != game_entity_count:
         problems.append(
-            f"registered {registered_game_count} of {game_entity_count} selected game entities"
+            f"registered {registered_game_count} of {game_entity_count} loadable game entities"
         )
 
     if problems:
@@ -210,7 +229,7 @@ def main() -> int:
 
     print(
         f"{args.encounter}: generated registry for {len(symbols)} loadable symbols; "
-        f"skipped {len(support_units)} non-loadable Engine support units"
+        f"skipped {len(support_units)} non-loadable support units"
     )
     return 0
 
