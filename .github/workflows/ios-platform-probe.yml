@@ -58,7 +58,10 @@ jobs:
             cat upstream/SeriousSamClassic/seriousios-patches.manifest
           } | tee artifacts/ios-platform-probe.txt
 
+          overall_status=0
           for encounter in TFE TSE; do
+            log="artifacts/ios-platform-${encounter}.log"
+            set +e
             "$CXX" \
               -target arm64-apple-ios15.0 \
               -isysroot "$SDK_PATH" \
@@ -67,15 +70,26 @@ jobs:
               -DUSE_PORTABLE_C=1 \
               -DPRAGMA_ONCE=1 \
               -I "upstream/SeriousSamClassic/Sam${encounter}/Sources" \
-              -fsyntax-only Tests/IOSPlatformProbe.cpp
-            echo "Sam${encounter}: platform probe passed" | tee -a artifacts/ios-platform-probe.txt
+              -fsyntax-only Tests/IOSPlatformProbe.cpp \
+              2>&1 | tee "$log"
+            compile_status=${PIPESTATUS[0]}
+            set -e
+
+            if [[ $compile_status -eq 0 ]]; then
+              echo "Sam${encounter}: platform probe passed" | tee -a artifacts/ios-platform-probe.txt
+            else
+              echo "Sam${encounter}: platform probe failed with status ${compile_status}" \
+                | tee -a artifacts/ios-platform-probe.txt
+              overall_status=1
+            fi
           done
+          exit "$overall_status"
 
       - name: Upload iPhoneOS platform evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: seriousios-iphoneos-platform-${{ github.sha }}
-          path: artifacts/ios-platform-probe.txt
+          path: artifacts
           if-no-files-found: warn
           retention-days: 14
