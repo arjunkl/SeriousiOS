@@ -207,7 +207,31 @@ else()
 endif()
 
 if(IOS AND SERIOUSIOS_RUNTIME_ONLY)
-    message(STATUS "SeriousiOS runtime-only graph configured; skipping desktop hosts and tools")
+    set(SERIOUSIOS_APPLICATION_TARGET "SeriousIOSApplication${MP}")
+    add_library(${SERIOUSIOS_APPLICATION_TARGET} STATIC
+        SeriousSam/LevelInfo.cpp
+        SeriousSam/CmdLine.cpp
+        SeriousSam/SeriousSam.cpp
+        SeriousSam/VarList.cpp
+        SeriousSam/Credits.cpp
+        SeriousSam/GLSettings.cpp
+        SeriousSam/LCDDrawing.cpp
+        ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSplashScreen.cpp
+        ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSMainWindow.cpp
+        SeriousSam/Menu.cpp
+        SeriousSam/MenuGadgets.cpp
+        SeriousSam/MenuPrinting.cpp
+    )
+    add_dependencies(${SERIOUSIOS_APPLICATION_TARGET} ParseEntities${MP})
+    target_link_libraries(${SERIOUSIOS_APPLICATION_TARGET}
+        ${ENGINELIB}
+        ${GAMEMPLIB}
+        ${SHADERSLIB}
+        ${ENTITIESMPLIB}
+    )
+    set_target_properties(${SERIOUSIOS_APPLICATION_TARGET}
+        PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    message(STATUS "SeriousiOS runtime and static application layer configured; skipping desktop hosts and tools")
     return()
 endif()''',
         f"{path}: runtime-only boundary",
