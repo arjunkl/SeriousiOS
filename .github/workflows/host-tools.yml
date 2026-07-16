@@ -31,6 +31,7 @@ jobs:
           bash -n scripts/smoke_generate_entities.sh
           bash -n scripts/generate_all_sources.sh
           python3 -m py_compile scripts/report_dependency_graph.py
+          python3 -m py_compile scripts/generate_static_entity_registry.py
 
       - name: Install generator dependencies
         shell: bash
@@ -86,6 +87,29 @@ jobs:
             build/host-tools \
             build/generated-all
 
+      - name: Generate explicit static entity registries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/static-registries
+          python3 scripts/generate_static_entity_registry.py \
+            build/generated-all/TFE \
+            TFE \
+            build/static-registries/SeriousIOSTFEEntityRegistry.cpp \
+            --manifest build/static-registries/TFE.json
+          python3 scripts/generate_static_entity_registry.py \
+            build/generated-all/TSE \
+            TSE \
+            build/static-registries/SeriousIOSTSEEntityRegistry.cpp \
+            --manifest build/static-registries/TSE.json
+
+          clang++ -std=c++17 -Wall -Wextra -Werror \
+            -I Sources/Platform/iOS \
+            -fsyntax-only build/static-registries/SeriousIOSTFEEntityRegistry.cpp
+          clang++ -std=c++17 -Wall -Wextra -Werror \
+            -I Sources/Platform/iOS \
+            -fsyntax-only build/static-registries/SeriousIOSTSEEntityRegistry.cpp
+
       - name: Upload host-tool evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,5 +124,6 @@ jobs:
             build/generated-all/TFE/generated.sha256
             build/generated-all/TSE/summary.txt
             build/generated-all/TSE/generated.sha256
+            build/static-registries
           if-no-files-found: warn
           retention-days: 14
