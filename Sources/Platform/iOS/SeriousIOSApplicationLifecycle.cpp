@@ -1,4 +1,5 @@
 #include "SeriousIOSApplicationLifecycle.h"
+#include "SeriousIOSDiagnostics.h"
 #include "SeriousIOSPlatformBridge.h"
 
 #include <Engine/Engine.h>
@@ -39,6 +40,7 @@ void setError(const char* message) {
         "%s",
         message == nullptr ? "Unknown Serious Sam application failure" : message);
     gApplicationError[sizeof(gApplicationError) - 1] = '\0';
+    SeriousIOS_DiagnosticsLog("error", "%s", gApplicationError);
 }
 
 const char* checkpointRoot() {
@@ -65,6 +67,11 @@ void writeCheckpoint(const char* state) {
 
     FILE* marker = std::fopen(markerPath, "wb");
     if (marker == nullptr) {
+        SeriousIOS_DiagnosticsLog(
+            "checkpoint",
+            "cannot_open path=%s state=%s",
+            markerPath,
+            state == nullptr ? "unknown" : state);
         return;
     }
     std::fprintf(marker, "state=%s\n", state == nullptr ? "unknown" : state);
@@ -77,6 +84,7 @@ void writeCheckpoint(const char* state) {
 bool fail(const char* message) {
     setError(message);
     writeCheckpoint("failed");
+    SeriousIOS_DiagnosticsWriteSummary("application-failure");
     return false;
 }
 
@@ -90,6 +98,11 @@ void configureInitialDisplayMode() {
     int height = 0;
     SDL_GetWindowSize(nullptr, &width, &height);
     if (width <= 0 || height <= 0) {
+        SeriousIOS_DiagnosticsLog(
+            "display",
+            "initial_drawable_invalid width=%d height=%d",
+            width,
+            height);
         return;
     }
 
@@ -102,6 +115,11 @@ void configureInitialDisplayMode() {
     sam_iGfxAPI = GAT_OGL;
     sam_bFullScreenActive = TRUE;
     sam_bBorderLessActive = TRUE;
+    SeriousIOS_DiagnosticsLog(
+        "display",
+        "initial_mode width=%d height=%d api=OpenGL fullscreen=1 borderless=1",
+        width,
+        height);
 }
 
 void enableMainThreadStreamHandling() {
@@ -112,6 +130,7 @@ void enableMainThreadStreamHandling() {
     SeriousIOS_ApplicationSetStage("enable-stream-handling");
     CTStream::EnableStreamHandling();
     gStreamHandlingEnabled = true;
+    SeriousIOS_DiagnosticsLog("stream", "main_thread_stream_handling=enabled");
 }
 
 void disableMainThreadStreamHandling() {
@@ -122,6 +141,7 @@ void disableMainThreadStreamHandling() {
     SeriousIOS_ApplicationSetStage("disable-stream-handling");
     CTStream::DisableStreamHandling();
     gStreamHandlingEnabled = false;
+    SeriousIOS_DiagnosticsLog("stream", "main_thread_stream_handling=disabled");
 }
 
 } // namespace
@@ -133,6 +153,7 @@ extern "C" void SeriousIOS_ApplicationSetStage(const char* stage) {
         "%s",
         stage == nullptr ? "unknown" : stage);
     gApplicationStage[sizeof(gApplicationStage) - 1] = '\0';
+    SeriousIOS_DiagnosticsLogStage(gApplicationStage);
     writeCheckpoint(gApplicationInitialized ? "running" : "initializing");
 }
 
@@ -143,7 +164,14 @@ extern "C" const char* SeriousIOS_ApplicationGetStage(void) {
 extern "C" void SeriousIOS_ApplicationRecordFatalError(const char* message) {
     gApplicationStartupFailed = true;
     setError(message == nullptr ? "Legacy FatalError terminated the process" : message);
+    SeriousIOS_DiagnosticsLog(
+        "fatal",
+        "stage=%s message=%s",
+        gApplicationStage,
+        gApplicationError);
     writeCheckpoint("fatal");
+    SeriousIOS_DiagnosticsWriteSummary("fatal-error");
+    SeriousIOS_DiagnosticsFlush();
 }
 
 extern "C" bool SeriousIOS_ApplicationInitialize(void) {
@@ -157,6 +185,7 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
 
     gApplicationError[0] = '\0';
     gFirstFrameCompleted = false;
+    SeriousIOS_DiagnosticsLog("application", "initialize_requested");
     SeriousIOS_ApplicationSetStage("application-entry");
     if (!SeriousIOS_ArePathsConfigured()) {
         return failStartup("SeriousiOS paths were not configured before application startup");
@@ -200,6 +229,12 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
     gApplicationInitialized = true;
     SeriousIOS_ApplicationSetStage("application-initialized");
     writeCheckpoint("initialized");
+    SeriousIOS_DiagnosticsLog(
+        "application",
+        "initialized menu_active=%d menu_rendering=%d",
+        bMenuActive != FALSE,
+        bMenuRendering != FALSE);
+    SeriousIOS_DiagnosticsWriteSummary("application-initialized");
     return true;
 }
 
@@ -230,10 +265,12 @@ extern "C" bool SeriousIOS_ApplicationFrame(void) {
         return fail("Serious Sam application frame threw an unknown exception");
     }
 
+    SeriousIOS_DiagnosticsRecordFramePresented();
     if (!gFirstFrameCompleted) {
         gFirstFrameCompleted = true;
         SeriousIOS_ApplicationSetStage("first-frame-complete");
         writeCheckpoint("first-frame-complete");
+        SeriousIOS_DiagnosticsWriteSummary("first-frame-complete");
     }
     return _bRunning != FALSE;
 }
@@ -248,6 +285,7 @@ extern "C" void SeriousIOS_ApplicationSuspend(void) {
     }
     SeriousIOS_ApplicationSetStage("suspended");
     writeCheckpoint("suspended");
+    SeriousIOS_DiagnosticsRecordSuspend();
 }
 
 extern "C" void SeriousIOS_ApplicationResume(void) {
@@ -260,6 +298,7 @@ extern "C" void SeriousIOS_ApplicationResume(void) {
     gApplicationSuspended = false;
     SeriousIOS_ApplicationSetStage("resumed");
     writeCheckpoint("initialized");
+    SeriousIOS_DiagnosticsRecordResume();
 }
 
 extern "C" void SeriousIOS_ApplicationShutdown(void) {
@@ -270,6 +309,7 @@ extern "C" void SeriousIOS_ApplicationShutdown(void) {
     gApplicationSuspended = true;
     _bRunning = FALSE;
     SeriousIOS_ApplicationSetStage("shutdown-entry");
+    SeriousIOS_DiagnosticsWriteSummary("application-shutdown-entry");
     if (_pGame != nullptr && _pGame->gm_bGameOn) {
         _pGame->StopGame();
     }
@@ -285,6 +325,7 @@ extern "C" void SeriousIOS_ApplicationShutdown(void) {
     gApplicationInitialized = false;
     SeriousIOS_ApplicationSetStage("stopped");
     writeCheckpoint("stopped");
+    SeriousIOS_DiagnosticsWriteSummary("application-stopped");
 }
 
 extern "C" bool SeriousIOS_ApplicationIsInitialized(void) {
