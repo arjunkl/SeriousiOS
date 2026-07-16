@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  build-generate-and-configure:
+  build-generate-configure-and-compile:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 75
     steps:
       - name: Checkout SeriousiOS
         uses: actions/checkout@v4
@@ -31,6 +31,7 @@ jobs:
           bash -n scripts/smoke_generate_entities.sh
           bash -n scripts/generate_all_sources.sh
           bash -n scripts/apply_upstream_patches.sh
+          bash -n scripts/build_ios_runtime_archives.sh
           python3 -m py_compile scripts/report_dependency_graph.py
           python3 -m py_compile scripts/generate_static_entity_registry.py
           python3 -m py_compile scripts/transform_cmake_for_ios.py
@@ -162,10 +163,6 @@ jobs:
               -DUSE_ASM=OFF \
               -DECC="$ecc" \
               -DSERIOUSIOS_RUNTIME_ONLY=ON \
-              -DBUILD_DEDICATED_SERVER=OFF \
-              -DBUILD_MAKEFONT=OFF \
-              -DBUILD_TEXConv=OFF \
-              -DBUILD_AMP11LIB=OFF \
               2>&1 | tee "build/cmake-model/${encounter}-configure.log"
 
             python3 scripts/report_cmake_model.py \
@@ -174,7 +171,21 @@ jobs:
               "build/cmake-model/${encounter}-codemodel.json"
           done
 
-      - name: Upload host-tool and CMake evidence
+      - name: Compile all static arm64 iOS runtime archives
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p build/archive-evidence
+          overall_status=0
+          for encounter in TFE TSE; do
+            bash scripts/build_ios_runtime_archives.sh \
+              "build/cmake-model/${encounter}" \
+              "$encounter" \
+              build/archive-evidence || overall_status=1
+          done
+          exit "$overall_status"
+
+      - name: Upload architecture, generation, and compilation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -189,6 +200,17 @@ jobs:
             build/generated-all/TSE/summary.txt
             build/generated-all/TSE/generated.sha256
             build/static-registries
-            build/cmake-model
+            build/cmake-model/*.log
+            build/cmake-model/*.json
+            build/cmake-model/*.md
+            build/cmake-model/*.patch
+            build/cmake-model/upstream-status.txt
+            build/cmake-model/TFE/CMakeCache.txt
+            build/cmake-model/TFE/CMakeFiles/TargetDirectories.txt
+            build/cmake-model/TFE/SeriousEngine.xcodeproj/project.pbxproj
+            build/cmake-model/TSE/CMakeCache.txt
+            build/cmake-model/TSE/CMakeFiles/TargetDirectories.txt
+            build/cmake-model/TSE/SeriousEngine.xcodeproj/project.pbxproj
+            build/archive-evidence
           if-no-files-found: warn
           retention-days: 14
