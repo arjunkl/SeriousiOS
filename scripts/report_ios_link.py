@@ -22,6 +22,7 @@ SHADER_MATH_NAMES = (
     "TransformVertex",
 )
 HOST_GLOBALS = {"_hwndMain", "_pGame"}
+EXPECTED_ENCOUNTERS = ("TFE", "TSE")
 
 
 def classify(symbol: str) -> str:
@@ -59,10 +60,20 @@ def read_status(path: Path | None, text: str) -> int:
     return 1 if "ld: " in text else 0
 
 
+def write_pair_verdict(output_dir: Path, encounter: str, succeeded: bool) -> bool:
+    verdict = output_dir / f"{encounter}-closure-verdict.txt"
+    verdict.write_text("pass\n" if succeeded else "fail\n", encoding="utf-8")
+
+    verdicts = [output_dir / f"{name}-closure-verdict.txt" for name in EXPECTED_ENCOUNTERS]
+    if not all(path.is_file() for path in verdicts):
+        return succeeded
+    return all(path.read_text(encoding="utf-8").strip() == "pass" for path in verdicts)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("log", type=Path)
-    parser.add_argument("encounter", choices=("TFE", "TSE"))
+    parser.add_argument("encounter", choices=EXPECTED_ENCOUNTERS)
     parser.add_argument("output", type=Path)
     parser.add_argument("--status-file", type=Path)
     args = parser.parse_args()
@@ -75,11 +86,18 @@ def main() -> int:
     frameworks = sorted(set(MISSING_FRAMEWORK_RE.findall(text)))
     linker_errors = sorted(set(LINKER_ERROR_RE.findall(text)))
     categories = Counter(classify(symbol) for symbol in symbols)
+    succeeded = (
+        status == 0
+        and not symbols
+        and not duplicates
+        and not libraries
+        and not frameworks
+    )
 
     report = {
         "encounter": args.encounter,
         "link_status": status,
-        "link_succeeded": status == 0,
+        "link_succeeded": succeeded,
         "undefined_symbol_count": len(symbols),
         "undefined_symbols": symbols,
         "category_counts": dict(sorted(categories.items())),
@@ -95,7 +113,7 @@ def main() -> int:
         f"# {args.encounter} iOS dry-link report",
         "",
         f"Link status: `{status}`",
-        f"Link succeeded: `{'yes' if status == 0 else 'no'}`",
+        f"Link succeeded: `{'yes' if succeeded else 'no'}`",
         f"Undefined symbols: `{len(symbols)}`",
         f"Duplicate symbols: `{len(duplicates)}`",
         "",
@@ -124,11 +142,12 @@ def main() -> int:
         markdown.extend(f"- `{error}`" for error in linker_errors)
 
     args.output.with_suffix(".md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
+    pair_succeeded = write_pair_verdict(args.output.parent, args.encounter, succeeded)
     print(
         f"{args.encounter}: status={status}, {len(symbols)} undefined, "
         f"{len(duplicates)} duplicates, categories={dict(sorted(categories.items()))}"
     )
-    return 0
+    return 0 if succeeded and pair_succeeded else 1
 
 
 if __name__ == "__main__":
