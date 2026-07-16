@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <mutex>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 
 namespace seriousios {
@@ -17,8 +16,8 @@ public:
 
     // Registration is idempotent when the same symbol is registered twice.
     // A conflicting address for an existing name is rejected.
-    bool registerSymbol(std::string_view name, void* address) noexcept;
-    [[nodiscard]] void* findSymbol(std::string_view name) const noexcept;
+    bool registerSymbol(const char* name, void* address) noexcept;
+    [[nodiscard]] void* findSymbol(const char* name) const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
 
     // Intended for isolated tests before engine startup only.
