@@ -1,0 +1,74 @@
+diff --git a/SamTFE/Sources/Engine/Base/Base.h b/SamTFE/Sources/Engine/Base/Base.h
+--- a/SamTFE/Sources/Engine/Base/Base.h
++++ b/SamTFE/Sources/Engine/Base/Base.h
+@@ -63,7 +63,12 @@
+     #define PLATFORM_LINUX 1
+   #endif
+ #elif (defined __APPLE__)
++  #include <TargetConditionals.h>
++  #if TARGET_OS_IPHONE
++    #define PLATFORM_IOS 1
++  #else
+     #define PLATFORM_MACOSX 1
++  #endif
+ #elif (defined __FreeBSD__)
+     #define PLATFORM_FREEBSD 1
+ #elif (defined __OpenBSD__) || (defined __NetBSD__)
+@@ -74,7 +79,7 @@
+   #define PLATFORM_UNKNOWN 1
+ #endif
+ 
+-#if PLATFORM_LINUX || PLATFORM_MACOSX
++#if PLATFORM_LINUX || PLATFORM_MACOSX || PLATFORM_IOS
+   #ifndef PLATFORM_UNIX
+     #define PLATFORM_UNIX 1
+   #endif
+diff --git a/SamTFE/Sources/Engine/Base/Types.h b/SamTFE/Sources/Engine/Base/Types.h
+--- a/SamTFE/Sources/Engine/Base/Types.h
++++ b/SamTFE/Sources/Engine/Base/Types.h
+@@ -141,7 +141,7 @@ MY_STATIC_ASSERT(size_tSize, sizeof(size_t) == sizeof(void*));
+ #undef MY_STATIC_ASSERT
+ 
+ // Mac symbols have an underscore prepended...
+-#if PLATFORM_MACOSX
++#if PLATFORM_MACOSX || PLATFORM_IOS
+   #define ASMSYM(x) "_" #x
+ #else
+   #define ASMSYM(x) #x
+diff --git a/SamTSE/Sources/Engine/Base/Base.h b/SamTSE/Sources/Engine/Base/Base.h
+--- a/SamTSE/Sources/Engine/Base/Base.h
++++ b/SamTSE/Sources/Engine/Base/Base.h
+@@ -63,7 +63,12 @@
+     #define PLATFORM_LINUX 1
+   #endif
+ #elif (defined __APPLE__)
++  #include <TargetConditionals.h>
++  #if TARGET_OS_IPHONE
++    #define PLATFORM_IOS 1
++  #else
+     #define PLATFORM_MACOSX 1
++  #endif
+ #elif (defined __FreeBSD__)
+     #define PLATFORM_FREEBSD 1
+ #elif (defined __OpenBSD__) || (defined __NetBSD__)
+@@ -74,7 +79,7 @@
+   #define PLATFORM_UNKNOWN 1
+ #endif
+ 
+-#if PLATFORM_LINUX || PLATFORM_MACOSX
++#if PLATFORM_LINUX || PLATFORM_MACOSX || PLATFORM_IOS
+   #ifndef PLATFORM_UNIX
+     #define PLATFORM_UNIX 1
+   #endif
+diff --git a/SamTSE/Sources/Engine/Base/Types.h b/SamTSE/Sources/Engine/Base/Types.h
+--- a/SamTSE/Sources/Engine/Base/Types.h
++++ b/SamTSE/Sources/Engine/Base/Types.h
+@@ -141,7 +141,7 @@ MY_STATIC_ASSERT(size_tSize, sizeof(size_t) == sizeof(void*));
+ #undef MY_STATIC_ASSERT
+ 
+ // Mac symbols have an underscore prepended...
+-#if PLATFORM_MACOSX
++#if PLATFORM_MACOSX || PLATFORM_IOS
+   #define ASMSYM(x) "_" #x
+ #else
+   #define ASMSYM(x) #x
