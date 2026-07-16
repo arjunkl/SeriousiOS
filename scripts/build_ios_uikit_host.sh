@@ -148,3 +148,11 @@ plutil -lint "$APP_DIR/Info.plist" | tee "$EVIDENCE/${ENCOUNTER}-plist.txt"
 file "$APP_DIR/$EXECUTABLE" | tee "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
 shasum -a 256 "$APP_DIR/$EXECUTABLE" | tee -a "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
 otool -L "$APP_DIR/$EXECUTABLE" > "$EVIDENCE/${ENCOUNTER}-uikit-linked-frameworks.txt"
+
+# Produce an unsigned IPA container suitable for downstream signing by AltStore,
+# Xcode, or another user-controlled signing tool. This is a host-shell milestone:
+# no copyrighted Serious Sam data files are bundled.
+bash "$REPOSITORY_ROOT/scripts/package_unsigned_ipa.sh" \
+  "$ENCOUNTER" \
+  "$APP_DIR" \
+  "$EVIDENCE"
