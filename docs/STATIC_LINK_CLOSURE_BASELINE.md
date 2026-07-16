@@ -1,12 +1,13 @@
-# SeriousiOS static link closure baseline
+# SeriousiOS strict static link closure baseline
 
 ## Proven revision
 
-- SeriousiOS branch revision: `6b6932cb1588fa2eec08e782745a382b65980c4e`
+- SeriousiOS branch revision: `352d9c2882cfcf99b98638f463d22d8cecb10ab4`
 - Pinned SeriousSamClassic revision: `80b9893e5b74e5a2160eaf63e6d6b3f3981dfbbd`
 - Target: `arm64-apple-ios15.0`
 - SDK: Apple `iphoneos`
 - Link mode: every runtime archive force-loaded into one executable per encounter
+- Dead stripping: disabled for the closure audit
 
 ## Closure result
 
@@ -17,8 +18,8 @@
 
 ### Product hashes
 
-- TFE: `b72b46554aadf3a0738a15747b68515e25ea26fb00c782cc8b2d338ada5c95bf`
-- TSE: `6bf6f2026e6dbd222fd4d2280996422fc57da3c7bb27a23a11bebcccf770de9d`
+- TFE: `17b5347d9ee763a60aafb0ad3bdf6a00a7ecf4df4358ab34782b8bffce246ff0`
+- TSE: `d8f9693b6429eff5094da2f7836af24ddb72035aa7532c3d0f17acb3f8bdcc31`
 
 ## Runtime archive set
 
@@ -40,6 +41,21 @@ TSE force-loads:
 
 The final links also include generated entity, Game, and shader registries plus the SeriousiOS host-global translation unit.
 
+## Why this is stricter than the earlier baseline
+
+The earlier proof used `-dead_strip`. That verified reachable-section closure but allowed dormant startup, filesystem, error, audio, and lifecycle sections to be discarded before relocation. The strict audit removes dead stripping while force-loading every archive, so all compiled runtime sections must resolve successfully.
+
+This exposed and repaired the remaining platform surface rather than leaving it hidden:
+
+- SDL initialization and custom event allocation
+- Periodic timer creation and cancellation
+- Base and preference path discovery
+- OpenGL ES context creation, activation, attributes, drawable size, and swap interval
+- Display-mode and window-state queries
+- Audio-device discovery and callback timing
+- Joystick discovery and neutral fallback behavior
+- Message-box, allocation, formatting, and utility functions
+
 ## Structural repairs represented by this baseline
 
 - Runtime `dlopen` and `dlsym` lookup is replaced by an explicit static symbol registry.
@@ -51,20 +67,22 @@ The final links also include generated entity, Game, and shader registries plus 
 - Shader helper functions required across former shared-library boundaries are exported explicitly.
 - Header-defined TFE light-coordinate tables use internal linkage.
 - The camera and GameAgent initialization globals no longer collide after static flattening.
-- The SeriousiOS SDL compatibility layer provides the exact platform-service symbol surface required for closure.
+- Linux and BSD filesystem discovery is replaced by explicit iOS sandbox paths and a native POSIX filesystem adapter.
+- The SeriousiOS SDL compatibility layer supplies the complete retained platform-service symbol surface required by both games.
 
 ## What this proves
 
-Both complete Serious Sam Classic runtime graphs can be compiled and linked as self-contained arm64 iPhoneOS executables without unresolved or duplicate symbols.
+Both complete Serious Sam Classic runtime graphs, including dormant startup and platform paths, can be compiled and linked as self-contained arm64 iPhoneOS executables without unresolved or duplicate symbols.
 
 ## What this does not prove
 
-- UIKit application lifecycle and scene startup
-- EAGL or Metal-backed drawable creation and presentation
-- Successful engine initialization with original game data
-- Audio playback
+- Successful execution on physical hardware
+- Completion of `SE_InitEngine`
+- Original game-data discovery or validation
+- First menu or gameplay frame
+- Audible audio output from the virtual callback bridge
 - Touch, gyro, or GameController runtime behavior
-- Foreground/background restoration
-- IPA signing or installation
+- Foreground and background restoration
+- Signing or installation
 
-The next milestone is a minimal UIKit host that links one encounter at a time, supplies a real render surface and bundle/document paths, registers static modules, and reaches a controlled engine-startup checkpoint before loading copyrighted game data.
+The next milestone is a controlled pre-data engine-startup probe that calls `SE_InitEngine` only after sandbox paths, static registries, and the EAGL drawable are ready.
