@@ -1,0 +1,63 @@
+name: SeriousiOS Bootstrap Audit
+
+on:
+  push:
+    branches:
+      - main
+      - agent/**
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-audit:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Checkout SeriousiOS
+        uses: actions/checkout@v4
+
+      - name: Load pinned revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat Dependencies.lock >> "$GITHUB_ENV"
+
+      - name: Checkout pinned SeriousSamClassic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "$SERIOUSSAMCLASSIC_REPOSITORY" upstream/SeriousSamClassic
+          git -C upstream/SeriousSamClassic checkout --detach "$SERIOUSSAMCLASSIC_COMMIT"
+          test "$(git -C upstream/SeriousSamClassic rev-parse HEAD)" = "$SERIOUSSAMCLASSIC_COMMIT"
+
+      - name: Verify architecture assumptions
+        run: python3 scripts/audit_upstream.py upstream/SeriousSamClassic
+
+      - name: Verify iOS bridge is portable C++
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang++ -std=c++17 -Wall -Wextra -Werror -I Sources/Platform/iOS \
+            -fsyntax-only Sources/Platform/iOS/SeriousIOSInputBridge.cpp
+
+      - name: Record audit artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          {
+            echo "SeriousSamClassic=$SERIOUSSAMCLASSIC_COMMIT"
+            echo "Serious-Sam-Android=$SERIOUS_SAM_ANDROID_COMMIT"
+            echo "eDukeiOS=$EDUKEIOS_REFERENCE_COMMIT"
+            xcodebuild -version
+            clang++ --version | head -n 1
+          } | tee artifacts/bootstrap-environment.txt
+
+      - name: Upload bootstrap environment
+        uses: actions/upload-artifact@v4
+        with:
+          name: seriousios-bootstrap-environment
+          path: artifacts/bootstrap-environment.txt
