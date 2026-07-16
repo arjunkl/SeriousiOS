@@ -38,6 +38,7 @@ endif()
         '    Engine/Base/Unix/UnixDynamicLoader.cpp\n',
         '''    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSDynamicLoader.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSStaticRegistry.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
 ''',
         f"{path}: dynamic loader replacement",
     )
