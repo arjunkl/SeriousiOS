@@ -109,11 +109,13 @@ jobs:
             build/generated-all/TFE \
             TFE \
             build/static-registries/SeriousIOSTFEEntityRegistry.cpp \
+            --upstream upstream/SeriousSamClassic \
             --manifest build/static-registries/TFE-entities.json
           python3 scripts/generate_static_entity_registry.py \
             build/generated-all/TSE \
             TSE \
             build/static-registries/SeriousIOSTSEEntityRegistry.cpp \
+            --upstream upstream/SeriousSamClassic \
             --manifest build/static-registries/TSE-entities.json
           python3 scripts/generate_static_runtime_registry.py \
             upstream/SeriousSamClassic \
@@ -228,13 +230,16 @@ jobs:
             echo "$status" > "build/link-evidence/${encounter}-driver-status.txt"
 
             log="build/link-evidence/${encounter}-dry-link.log"
+            link_status="build/link-evidence/${encounter}-dry-link-status.txt"
             if [[ ! -f "$log" ]]; then
               echo "Dry-link driver failed before invoking the linker (status ${status})." > "$log"
+              echo "$status" > "$link_status"
             fi
             python3 scripts/report_ios_link.py \
               "$log" \
               "$encounter" \
-              "build/link-evidence/${encounter}-link-report.json"
+              "build/link-evidence/${encounter}-link-report.json" \
+              --status-file "$link_status"
           done
 
       - name: Upload architecture, generation, compilation, and link evidence
