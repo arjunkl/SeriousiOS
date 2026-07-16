@@ -13,13 +13,26 @@ SYMBOL_RE = re.compile(
     r'([A-Za-z_][A-Za-z0-9_]*_DLLClass)\s*;'
 )
 
+ENCOUNTER_PACKAGES = {
+    "TFE": ("Engine/Classes", "Entities"),
+    "TSE": ("Engine/Classes", "EntitiesMP"),
+}
 
-def discover_symbols(root: Path) -> list[str]:
+
+def discover_symbols(root: Path, encounter: str) -> tuple[list[str], list[str]]:
     symbols: set[str] = set()
-    for header in root.rglob("*.h"):
-        text = header.read_text(encoding="utf-8", errors="ignore")
-        symbols.update(SYMBOL_RE.findall(text))
-    return sorted(symbols)
+    scanned_packages: list[str] = []
+
+    for relative in ENCOUNTER_PACKAGES[encounter]:
+        package_root = root / relative
+        if not package_root.is_dir():
+            raise FileNotFoundError(package_root)
+        scanned_packages.append(relative)
+        for header in package_root.rglob("*.h"):
+            text = header.read_text(encoding="utf-8", errors="ignore")
+            symbols.update(SYMBOL_RE.findall(text))
+
+    return sorted(symbols), scanned_packages
 
 
 def render(encounter: str, symbols: list[str]) -> str:
@@ -67,10 +80,11 @@ def main() -> int:
     if not root.is_dir():
         raise SystemExit(f"generated root does not exist: {root}")
 
-    symbols = discover_symbols(root)
+    symbols, scanned_packages = discover_symbols(root, args.encounter)
     if len(symbols) < 100:
         raise SystemExit(
-            f"expected a complete entity corpus, found only {len(symbols)} symbols"
+            f"expected a complete {args.encounter} entity package, "
+            f"found only {len(symbols)} symbols"
         )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +97,7 @@ def main() -> int:
             {
                 "encounter": args.encounter,
                 "generated_root": str(root),
+                "scanned_packages": scanned_packages,
                 "symbol_count": len(symbols),
                 "symbols": symbols,
             },
@@ -93,7 +108,10 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print(f"{args.encounter}: generated registry for {len(symbols)} entity symbols")
+    print(
+        f"{args.encounter}: generated registry for {len(symbols)} entity symbols "
+        f"from {', '.join(scanned_packages)}"
+    )
     return 0
 
 
