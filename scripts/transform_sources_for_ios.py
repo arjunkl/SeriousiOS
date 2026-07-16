@@ -298,7 +298,8 @@ def instrument_serioussam_startup(path: Path) -> int:
     )
 
     for old, new in replacements:
-        changes += replace_exact(path, old, new)
+        expected = 2 if old == "  \tSetAdjusters();" else 1
+        changes += replace_exact(path, old, new, expected=expected)
     return changes
 
 
