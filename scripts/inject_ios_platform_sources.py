@@ -35,9 +35,17 @@ endif()
 
     text = replace_once(
         text,
+        '    Engine/Base/Unix/UnixFileSystem.cpp\n',
+        '    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSFileSystem.cpp\n',
+        f"{path}: filesystem replacement",
+    )
+
+    text = replace_once(
+        text,
         '    Engine/Base/Unix/UnixDynamicLoader.cpp\n',
         '''    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSDynamicLoader.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSStaticRegistry.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSPlatformState.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
 ''',
         f"{path}: dynamic loader replacement",
