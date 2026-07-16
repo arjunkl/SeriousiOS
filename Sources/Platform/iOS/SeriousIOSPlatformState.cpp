@@ -3,6 +3,7 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -61,6 +62,13 @@ extern "C" bool SeriousIOS_ConfigurePaths(
     }
 
     std::lock_guard<std::mutex> lock(gPathMutex);
+    if (gPaths.configured) {
+        return gPaths.executable == next.executable
+            && gPaths.data == next.data
+            && gPaths.user == next.user
+            && gPaths.cache == next.cache
+            && gPaths.temporary == next.temporary;
+    }
     gPaths = std::move(next);
     return true;
 }
