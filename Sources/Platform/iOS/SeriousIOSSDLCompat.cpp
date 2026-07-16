@@ -1,13 +1,22 @@
+#include "SeriousIOSPlatformBridge.h"
+
 #include <SDL.h>
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
 #include <mach/mach_time.h>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <time.h>
+#include <unordered_map>
+#include <vector>
 
 #ifdef SDL_memset
 #undef SDL_memset
@@ -22,7 +31,9 @@
 namespace {
 
 const char* kSeriousIOSError =
-    "SeriousiOS SDL compatibility service is not available in the current host";
+    "SeriousiOS compatibility service is not available in the current host";
+const char* kAudioDriverName = "seriousios-virtual-audio";
+const char* kAudioDeviceName = "SeriousiOS Virtual Output";
 
 using PresentCallback = void (*)(void* context);
 
@@ -31,11 +42,30 @@ std::atomic<int> gWindowHeight{0};
 std::atomic<int> gSwapInterval{0};
 std::atomic<int> gCursorState{SDL_ENABLE};
 std::atomic<int> gJoystickEventState{SDL_ENABLE};
-std::atomic<Uint32> gNextUserEvent{SDL_USEREVENT};
-std::atomic<int> gNextTimerId{1};
 std::atomic<PresentCallback> gPresentCallback{nullptr};
 std::atomic<void*> gPresentContext{nullptr};
+std::atomic<Uint32> gNextUserEvent{SDL_USEREVENT};
+std::atomic<int> gNextTimerID{1};
+std::atomic<SDL_AudioDeviceID> gNextAudioDeviceID{1};
 Uint8 gKeyboardState[SDL_NUM_SCANCODES] = {};
+
+std::mutex gGLAttributeMutex;
+std::unordered_map<int, int> gGLAttributes;
+
+struct TimerState {
+    std::atomic<bool> cancelled{false};
+};
+std::mutex gTimerMutex;
+std::unordered_map<int, std::shared_ptr<TimerState>> gTimers;
+
+struct AudioDeviceState {
+    SDL_AudioSpec specification = {};
+    std::atomic<bool> paused{true};
+    std::atomic<bool> cancelled{false};
+    std::recursive_mutex callbackMutex;
+};
+std::mutex gAudioDeviceMutex;
+std::unordered_map<SDL_AudioDeviceID, std::shared_ptr<AudioDeviceState>> gAudioDevices;
 
 void writeZero(int* value) {
     if (value != nullptr) {
@@ -43,16 +73,54 @@ void writeZero(int* value) {
     }
 }
 
-char* duplicatePath(const char* value) {
-    if (value == nullptr) {
-        return nullptr;
+void fillDisplayMode(SDL_DisplayMode* mode) {
+    if (mode == nullptr) {
+        return;
     }
-    const size_t size = std::strlen(value) + 1;
-    char* result = static_cast<char*>(std::malloc(size));
-    if (result != nullptr) {
-        std::memcpy(result, value, size);
+    mode->format = SDL_PIXELFORMAT_RGBA8888;
+    mode->w = gWindowWidth.load(std::memory_order_relaxed);
+    mode->h = gWindowHeight.load(std::memory_order_relaxed);
+    if (mode->w <= 0) {
+        mode->w = 1920;
     }
-    return result;
+    if (mode->h <= 0) {
+        mode->h = 1080;
+    }
+    mode->refresh_rate = 60;
+    mode->driverdata = nullptr;
+}
+
+std::shared_ptr<AudioDeviceState> audioDevice(SDL_AudioDeviceID device) {
+    std::lock_guard<std::mutex> lock(gAudioDeviceMutex);
+    const auto iterator = gAudioDevices.find(device);
+    return iterator == gAudioDevices.end() ? nullptr : iterator->second;
+}
+
+void runAudioDevice(const std::shared_ptr<AudioDeviceState>& state) {
+    const int frequency = state->specification.freq > 0
+        ? state->specification.freq
+        : 44100;
+    const int sampleCount = state->specification.samples > 0
+        ? state->specification.samples
+        : 2048;
+    const auto period = std::chrono::microseconds(
+        static_cast<long long>(sampleCount) * 1000000LL / frequency);
+    std::vector<Uint8> buffer(state->specification.size, state->specification.silence);
+
+    while (!state->cancelled.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(period);
+        if (state->paused.load(std::memory_order_acquire)
+            || state->specification.callback == nullptr) {
+            continue;
+        }
+
+        std::lock_guard<std::recursive_mutex> lock(state->callbackMutex);
+        std::fill(buffer.begin(), buffer.end(), state->specification.silence);
+        state->specification.callback(
+            state->specification.userdata,
+            buffer.data(),
+            static_cast<int>(buffer.size()));
+    }
 }
 
 } // namespace
@@ -79,6 +147,19 @@ void SDLCALL SDL_Quit(void) {
 
 const char* SDLCALL SDL_GetError(void) {
     return kSeriousIOSError;
+}
+
+Uint32 SDLCALL SDL_RegisterEvents(int eventCount) {
+    if (eventCount <= 0) {
+        return static_cast<Uint32>(-1);
+    }
+    const Uint32 first = gNextUserEvent.fetch_add(
+        static_cast<Uint32>(eventCount),
+        std::memory_order_relaxed);
+    if (first > static_cast<Uint32>(SDL_LASTEVENT - eventCount)) {
+        return static_cast<Uint32>(-1);
+    }
+    return first;
 }
 
 Uint64 SDLCALL SDL_GetPerformanceCounter(void) {
@@ -109,30 +190,47 @@ SDL_TimerID SDLCALL SDL_AddTimer(
     Uint32 interval,
     SDL_TimerCallback callback,
     void* parameter) {
-    (void)interval;
-    (void)callback;
-    (void)parameter;
-    return gNextTimerId.fetch_add(1, std::memory_order_relaxed);
-}
-
-SDL_bool SDLCALL SDL_RemoveTimer(SDL_TimerID timer) {
-    return timer > 0 ? SDL_TRUE : SDL_FALSE;
-}
-
-Uint32 SDLCALL SDL_RegisterEvents(int count) {
-    if (count <= 0) {
-        return static_cast<Uint32>(-1);
+    if (interval == 0 || callback == nullptr) {
+        return 0;
     }
-    const Uint32 first = gNextUserEvent.fetch_add(
-        static_cast<Uint32>(count), std::memory_order_relaxed);
-    if (first > SDL_LASTEVENT || first + static_cast<Uint32>(count) > SDL_LASTEVENT) {
-        return static_cast<Uint32>(-1);
+
+    const int timerID = gNextTimerID.fetch_add(1, std::memory_order_relaxed);
+    auto state = std::make_shared<TimerState>();
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        gTimers.emplace(timerID, state);
     }
-    return first;
+
+    std::thread([timerID, interval, callback, parameter, state] {
+        Uint32 nextInterval = interval;
+        while (!state->cancelled.load(std::memory_order_acquire)
+            && nextInterval != 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(nextInterval));
+            if (state->cancelled.load(std::memory_order_acquire)) {
+                break;
+            }
+            nextInterval = callback(nextInterval, parameter);
+        }
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        gTimers.erase(timerID);
+    }).detach();
+
+    return timerID;
 }
 
-void* SDLCALL SDL_GL_GetProcAddress(const char* procedure) {
-    return procedure == nullptr ? nullptr : dlsym(RTLD_DEFAULT, procedure);
+SDL_bool SDLCALL SDL_RemoveTimer(SDL_TimerID timerID) {
+    std::shared_ptr<TimerState> state;
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        const auto iterator = gTimers.find(timerID);
+        if (iterator == gTimers.end()) {
+            return SDL_FALSE;
+        }
+        state = iterator->second;
+        gTimers.erase(iterator);
+    }
+    state->cancelled.store(true, std::memory_order_release);
+    return SDL_TRUE;
 }
 
 int SDLCALL SDL_GL_LoadLibrary(const char* path) {
@@ -140,33 +238,44 @@ int SDLCALL SDL_GL_LoadLibrary(const char* path) {
     return 0;
 }
 
-SDL_GLContext SDLCALL SDL_GL_CreateContext(SDL_Window* window) {
-    (void)window;
-    // The UIKit host owns the EAGLContext. Return a stable non-null token so
-    // Serious Engine's SDL abstraction can retain its normal lifecycle.
-    return reinterpret_cast<SDL_GLContext>(gPresentContext.load(std::memory_order_acquire));
-}
-
-void SDLCALL SDL_GL_DeleteContext(SDL_GLContext context) {
-    (void)context;
-}
-
-int SDLCALL SDL_GL_MakeCurrent(SDL_Window* window, SDL_GLContext context) {
-    (void)window;
-    (void)context;
-    return 0;
+void* SDLCALL SDL_GL_GetProcAddress(const char* procedure) {
+    return procedure == nullptr ? nullptr : dlsym(RTLD_DEFAULT, procedure);
 }
 
 int SDLCALL SDL_GL_SetAttribute(SDL_GLattr attribute, int value) {
-    (void)attribute;
-    (void)value;
+    std::lock_guard<std::mutex> lock(gGLAttributeMutex);
+    gGLAttributes[static_cast<int>(attribute)] = value;
     return 0;
 }
 
 int SDLCALL SDL_GL_GetAttribute(SDL_GLattr attribute, int* value) {
-    (void)attribute;
-    writeZero(value);
+    if (value == nullptr) {
+        return -1;
+    }
+    std::lock_guard<std::mutex> lock(gGLAttributeMutex);
+    const auto iterator = gGLAttributes.find(static_cast<int>(attribute));
+    *value = iterator == gGLAttributes.end() ? 0 : iterator->second;
     return 0;
+}
+
+SDL_GLContext SDLCALL SDL_GL_CreateContext(SDL_Window* window) {
+    (void)window;
+    return SeriousIOS_MakeGLContextCurrent() == 0
+        ? SeriousIOS_GetGLContext()
+        : nullptr;
+}
+
+int SDLCALL SDL_GL_MakeCurrent(SDL_Window* window, SDL_GLContext context) {
+    (void)window;
+    if (context != SeriousIOS_GetGLContext()) {
+        return -1;
+    }
+    return SeriousIOS_MakeGLContextCurrent();
+}
+
+void SDLCALL SDL_GL_DeleteContext(SDL_GLContext context) {
+    (void)context;
+    // The CAEAGLLayer host owns the EAGLContext lifetime.
 }
 
 int SDLCALL SDL_GL_SetSwapInterval(int interval) {
@@ -213,24 +322,27 @@ void SDLCALL SDL_DestroyWindow(SDL_Window* window) {
     (void)window;
 }
 
-int SDLCALL SDL_GetDesktopDisplayMode(int displayIndex, SDL_DisplayMode* mode) {
-    if (displayIndex != 0 || mode == nullptr) {
-        return -1;
-    }
-    std::memset(mode, 0, sizeof(*mode));
-    mode->format = SDL_PIXELFORMAT_RGBA8888;
-    mode->w = gWindowWidth.load(std::memory_order_relaxed);
-    mode->h = gWindowHeight.load(std::memory_order_relaxed);
-    mode->refresh_rate = 60;
-    return 0;
-}
-
 int SDLCALL SDL_GetNumDisplayModes(int displayIndex) {
     return displayIndex == 0 ? 1 : -1;
 }
 
-int SDLCALL SDL_GetDisplayMode(int displayIndex, int modeIndex, SDL_DisplayMode* mode) {
-    return modeIndex == 0 ? SDL_GetDesktopDisplayMode(displayIndex, mode) : -1;
+int SDLCALL SDL_GetDisplayMode(
+    int displayIndex,
+    int modeIndex,
+    SDL_DisplayMode* mode) {
+    if (displayIndex != 0 || modeIndex != 0 || mode == nullptr) {
+        return -1;
+    }
+    fillDisplayMode(mode);
+    return 0;
+}
+
+int SDLCALL SDL_GetDesktopDisplayMode(int displayIndex, SDL_DisplayMode* mode) {
+    if (displayIndex != 0 || mode == nullptr) {
+        return -1;
+    }
+    fillDisplayMode(mode);
+    return 0;
 }
 
 int SDLCALL SDL_ShowSimpleMessageBox(
@@ -250,18 +362,15 @@ int SDLCALL SDL_ShowSimpleMessageBox(
 
 int SDLCALL SDL_ShowMessageBox(
     const SDL_MessageBoxData* messageBoxData,
-    int* buttonId) {
-    if (buttonId != nullptr) {
-        *buttonId = -1;
+    int* buttonID) {
+    if (buttonID != nullptr) {
+        *buttonID = -1;
     }
-    if (messageBoxData != nullptr) {
-        std::fprintf(
-            stderr,
-            "SeriousiOS message: %s: %s\n",
-            messageBoxData->title == nullptr ? "Serious Engine" : messageBoxData->title,
-            messageBoxData->message == nullptr ? "" : messageBoxData->message);
-    }
-    return 0;
+    return SDL_ShowSimpleMessageBox(
+        messageBoxData == nullptr ? 0 : messageBoxData->flags,
+        messageBoxData == nullptr ? nullptr : messageBoxData->title,
+        messageBoxData == nullptr ? nullptr : messageBoxData->message,
+        messageBoxData == nullptr ? nullptr : messageBoxData->window);
 }
 
 const Uint8* SDLCALL SDL_GetKeyboardState(int* keyCount) {
@@ -312,33 +421,13 @@ int SDLCALL SDL_NumJoysticks(void) {
     return 0;
 }
 
-SDL_bool SDLCALL SDL_IsGameController(int joystickIndex) {
-    (void)joystickIndex;
-    return SDL_FALSE;
-}
-
-SDL_GameController* SDLCALL SDL_GameControllerOpen(int joystickIndex) {
+const char* SDLCALL SDL_JoystickNameForIndex(int joystickIndex) {
     (void)joystickIndex;
     return nullptr;
 }
 
-SDL_Joystick* SDLCALL SDL_GameControllerGetJoystick(SDL_GameController* controller) {
-    (void)controller;
-    return nullptr;
-}
-
-SDL_JoystickID SDLCALL SDL_JoystickInstanceID(SDL_Joystick* joystick) {
-    (void)joystick;
-    return static_cast<SDL_JoystickID>(-1);
-}
-
-const char* SDLCALL SDL_JoystickNameForIndex(int deviceIndex) {
-    (void)deviceIndex;
-    return "SeriousiOS virtual input";
-}
-
-SDL_Joystick* SDLCALL SDL_JoystickOpen(int deviceIndex) {
-    (void)deviceIndex;
+SDL_Joystick* SDLCALL SDL_JoystickOpen(int joystickIndex) {
+    (void)joystickIndex;
     return nullptr;
 }
 
@@ -361,6 +450,26 @@ int SDLCALL SDL_JoystickNumHats(SDL_Joystick* joystick) {
     return 0;
 }
 
+SDL_bool SDLCALL SDL_IsGameController(int joystickIndex) {
+    (void)joystickIndex;
+    return SDL_FALSE;
+}
+
+SDL_GameController* SDLCALL SDL_GameControllerOpen(int joystickIndex) {
+    (void)joystickIndex;
+    return nullptr;
+}
+
+SDL_Joystick* SDLCALL SDL_GameControllerGetJoystick(SDL_GameController* controller) {
+    (void)controller;
+    return nullptr;
+}
+
+SDL_JoystickID SDLCALL SDL_JoystickInstanceID(SDL_Joystick* joystick) {
+    (void)joystick;
+    return static_cast<SDL_JoystickID>(-1);
+}
+
 int SDLCALL SDL_JoystickEventState(int state) {
     if (state == SDL_ENABLE || state == SDL_IGNORE) {
         gJoystickEventState.store(state, std::memory_order_relaxed);
@@ -380,70 +489,140 @@ Uint8 SDLCALL SDL_JoystickGetButton(SDL_Joystick* joystick, int button) {
     return 0;
 }
 
+int SDLCALL SDL_GetNumAudioDevices(int capture) {
+    return capture == 0 ? 1 : 0;
+}
+
+const char* SDLCALL SDL_GetAudioDeviceName(int index, int capture) {
+    return capture == 0 && index == 0 ? kAudioDeviceName : nullptr;
+}
+
 const char* SDLCALL SDL_GetCurrentAudioDriver(void) {
-    return "SeriousiOS";
-}
-
-int SDLCALL SDL_GetNumAudioDevices(int isCapture) {
-    return isCapture == 0 ? 1 : 0;
-}
-
-const char* SDLCALL SDL_GetAudioDeviceName(int index, int isCapture) {
-    return index == 0 && isCapture == 0 ? "SeriousiOS Audio" : nullptr;
+    return kAudioDriverName;
 }
 
 SDL_AudioDeviceID SDLCALL SDL_OpenAudioDevice(
     const char* device,
-    int isCapture,
+    int capture,
     const SDL_AudioSpec* desired,
     SDL_AudioSpec* obtained,
     int allowedChanges) {
     (void)device;
     (void)allowedChanges;
-    if (isCapture != 0 || desired == nullptr) {
+    if (capture != 0 || desired == nullptr) {
         return 0;
     }
-    if (obtained != nullptr) {
-        *obtained = *desired;
-    }
-    return 1;
-}
 
-void SDLCALL SDL_CloseAudioDevice(SDL_AudioDeviceID device) {
-    (void)device;
+    auto state = std::make_shared<AudioDeviceState>();
+    state->specification = *desired;
+    if (state->specification.samples == 0) {
+        state->specification.samples = 2048;
+    }
+    const int bytesPerSample = SDL_AUDIO_BITSIZE(state->specification.format) / 8;
+    if (state->specification.freq <= 0
+        || state->specification.channels == 0
+        || bytesPerSample <= 0) {
+        return 0;
+    }
+    state->specification.silence =
+        state->specification.format == AUDIO_U8 ? 0x80 : 0;
+    state->specification.size =
+        static_cast<Uint32>(state->specification.samples)
+        * state->specification.channels
+        * static_cast<Uint32>(bytesPerSample);
+
+    const SDL_AudioDeviceID deviceID =
+        gNextAudioDeviceID.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(gAudioDeviceMutex);
+        gAudioDevices.emplace(deviceID, state);
+    }
+    if (obtained != nullptr) {
+        *obtained = state->specification;
+    }
+    std::thread(runAudioDevice, state).detach();
+    return deviceID;
 }
 
 void SDLCALL SDL_PauseAudioDevice(SDL_AudioDeviceID device, int pauseOn) {
-    (void)device;
-    (void)pauseOn;
+    const auto state = audioDevice(device);
+    if (state != nullptr) {
+        state->paused.store(pauseOn != 0, std::memory_order_release);
+    }
+}
+
+void SDLCALL SDL_CloseAudioDevice(SDL_AudioDeviceID device) {
+    std::shared_ptr<AudioDeviceState> state;
+    {
+        std::lock_guard<std::mutex> lock(gAudioDeviceMutex);
+        const auto iterator = gAudioDevices.find(device);
+        if (iterator == gAudioDevices.end()) {
+            return;
+        }
+        state = iterator->second;
+        gAudioDevices.erase(iterator);
+    }
+    state->cancelled.store(true, std::memory_order_release);
 }
 
 void SDLCALL SDL_LockAudioDevice(SDL_AudioDeviceID device) {
-    (void)device;
+    const auto state = audioDevice(device);
+    if (state != nullptr) {
+        state->callbackMutex.lock();
+    }
 }
 
 void SDLCALL SDL_UnlockAudioDevice(SDL_AudioDeviceID device) {
-    (void)device;
+    const auto state = audioDevice(device);
+    if (state != nullptr) {
+        state->callbackMutex.unlock();
+    }
 }
 
 char* SDLCALL SDL_GetBasePath(void) {
-    return duplicatePath("./");
+    const char* path = SeriousIOS_GetExecutablePath();
+    if (path == nullptr) {
+        return nullptr;
+    }
+    const char* slash = std::strrchr(path, '/');
+    const size_t length = slash == nullptr
+        ? std::strlen(path)
+        : static_cast<size_t>(slash - path + 1);
+    char* result = static_cast<char*>(std::malloc(length + 1));
+    if (result != nullptr) {
+        std::memcpy(result, path, length);
+        result[length] = '\0';
+    }
+    return result;
 }
 
 char* SDLCALL SDL_GetPrefPath(const char* organization, const char* application) {
     (void)organization;
     (void)application;
-    return duplicatePath("./Documents/");
+    const char* path = SeriousIOS_GetUserPath();
+    if (path == nullptr) {
+        return nullptr;
+    }
+    const size_t length = std::strlen(path) + 1;
+    char* result = static_cast<char*>(std::malloc(length));
+    if (result != nullptr) {
+        std::memcpy(result, path, length);
+    }
+    return result;
 }
 
 void SDLCALL SDL_free(void* memory) {
     std::free(memory);
 }
 
-int SDLCALL SDL_snprintf(char* text, size_t maxLength, const char* format, ...) {
+int SDLCALL SDL_snprintf(
+    char* destination,
+    size_t maximumLength,
+    const char* format,
+    ...) {
     va_list arguments;
     va_start(arguments, format);
-    const int result = std::vsnprintf(text, maxLength, format, arguments);
+    const int result = std::vsnprintf(destination, maximumLength, format, arguments);
     va_end(arguments);
     return result;
 }
