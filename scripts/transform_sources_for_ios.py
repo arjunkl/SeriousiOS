@@ -145,8 +145,165 @@ def configure_engine_ios_paths(path: Path) -> int:
     return changes
 
 
-def adapt_serioussam_application(path: Path) -> int:
+def instrument_serioussam_startup(path: Path) -> int:
     changes = 0
+    changes += replace_exact(
+        path,
+        '#include "SeriousSam/StdH.h"\n',
+        '''#include "SeriousSam/StdH.h"
+#ifdef PLATFORM_IOS
+#include "SeriousIOSApplicationLifecycle.h"
+#define SERIOUSIOS_STAGE(name) SeriousIOS_ApplicationSetStage(name)
+#else
+#define SERIOUSIOS_STAGE(name) ((void)0)
+#endif
+''',
+    )
+
+    replacements = (
+        (
+            '''BOOL Init( HINSTANCE hInstance, int nCmdShow, CTString strCmdLine)
+{
+#ifdef PLATFORM_UNIX''',
+            '''BOOL Init( HINSTANCE hInstance, int nCmdShow, CTString strCmdLine)
+{
+  SERIOUSIOS_STAGE("init-sdl");
+#ifdef PLATFORM_UNIX''',
+        ),
+        (
+            '''  _hInstance = hInstance;
+  ShowSplashScreen(hInstance);''',
+            '''  _hInstance = hInstance;
+  SERIOUSIOS_STAGE("show-splash");
+  ShowSplashScreen(hInstance);''',
+        ),
+        (
+            '''  // prepare main window
+  MainWindow_Init();''',
+            '''  // prepare main window
+  SERIOUSIOS_STAGE("main-window-init");
+  MainWindow_Init();''',
+        ),
+        (
+            '''  // parse command line before initializing engine
+  ParseCommandLine(strCmdLine);''',
+            '''  // parse command line before initializing engine
+  SERIOUSIOS_STAGE("parse-command-line");
+  ParseCommandLine(strCmdLine);''',
+        ),
+        (
+            '''  // initialize engine
+#ifdef PLATFORM_UNIX''',
+            '''  // initialize engine
+  SERIOUSIOS_STAGE("engine-init");
+#ifdef PLATFORM_UNIX''',
+        ),
+        (
+            '''#endif
+  SE_LoadDefaultFonts();''',
+            '''#endif
+  SERIOUSIOS_STAGE("load-default-fonts");
+  SE_LoadDefaultFonts();''',
+        ),
+        (
+            '''  // lock the directory
+  DirectoryLockOn();''',
+            '''  // lock the directory
+  SERIOUSIOS_STAGE("directory-lock");
+  DirectoryLockOn();''',
+        ),
+        (
+            '''  // load all translation tables
+  InitTranslation();''',
+            '''  // load all translation tables
+  SERIOUSIOS_STAGE("translations");
+  InitTranslation();''',
+        ),
+        (
+            '''  // declare shell symbols
+  _pShell->DeclareSymbol("user void PlayDemo(CTString);", (void *) &PlayDemo);''',
+            '''  // declare shell symbols
+  SERIOUSIOS_STAGE("declare-shell-symbols");
+  _pShell->DeclareSymbol("user void PlayDemo(CTString);", (void *) &PlayDemo);''',
+        ),
+        (
+            '''  InitializeGame();
+  _pNetwork->md_strGameID = sam_strGameName;''',
+            '''  SERIOUSIOS_STAGE("game-create-and-initialize");
+  InitializeGame();
+  _pNetwork->md_strGameID = sam_strGameName;''',
+        ),
+        (
+            '''  _pGame->LCDInit();''',
+            '''  SERIOUSIOS_STAGE("lcd-init");
+  _pGame->LCDInit();''',
+        ),
+        (
+            '''  // initialize sound library
+  snd_iFormat = Clamp''',
+            '''  // initialize sound library
+  SERIOUSIOS_STAGE("sound-init");
+  snd_iFormat = Clamp''',
+        ),
+        (
+            '''  \tSetAdjusters();''',
+            '''  SERIOUSIOS_STAGE("menu-adjusters");
+  \tSetAdjusters();''',
+        ),
+        (
+            '''  // load logo textures
+  LoadAndForceTexture(_toLogoCT,''',
+            '''  // load logo textures
+  SERIOUSIOS_STAGE("load-logo-textures");
+  LoadAndForceTexture(_toLogoCT,''',
+        ),
+        (
+            '''  InitializeMenus();''',
+            '''  SERIOUSIOS_STAGE("initialize-menus");
+  InitializeMenus();''',
+        ),
+        (
+            '''  // init gl settings module
+  InitGLSettings();''',
+            '''  // init gl settings module
+  SERIOUSIOS_STAGE("gl-settings");
+  InitGLSettings();''',
+        ),
+        (
+            '''  // init level-info subsystem
+  LoadLevelsList();''',
+            '''  // init level-info subsystem
+  SERIOUSIOS_STAGE("load-level-and-demo-lists");
+  LoadLevelsList();''',
+        ),
+        (
+            '''  // apply application mode
+  StartNewMode(''',
+            '''  // apply application mode
+  SERIOUSIOS_STAGE("start-display-mode");
+  StartNewMode(''',
+        ),
+        (
+            '''  } else {
+    StartNextDemo();
+  }
+  return TRUE;''',
+            '''  } else {
+    SERIOUSIOS_STAGE("start-main-menu");
+    StartNextDemo();
+  }
+  SERIOUSIOS_STAGE("upstream-init-complete");
+  return TRUE;''',
+        ),
+    )
+
+    for old, new in replacements:
+        changes += replace_exact(path, old, new)
+    return changes
+
+
+def adapt_serioussam_application(path: Path) -> int:
+    changes = instrument_serioussam_startup(path)
     changes += replace_exact(
         path,
         "#if !defined(PLATFORM_MACOSX) && !defined(PLATFORM_FREEBSD)",
