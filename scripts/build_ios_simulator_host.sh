@@ -93,6 +93,7 @@ done
   -Wl,-dead_strip \
   -framework Foundation \
   -framework UIKit \
+  -framework UniformTypeIdentifiers \
   -framework CoreFoundation \
   -framework CoreGraphics \
   -framework QuartzCore \
