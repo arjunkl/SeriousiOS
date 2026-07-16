@@ -3,6 +3,7 @@
 #import <OpenGLES/EAGL.h>
 #import <OpenGLES/ES2/gl.h>
 
+#include "SeriousIOSEngineStartup.h"
 #include "SeriousIOSPlatformBridge.h"
 
 #if defined(SERIOUSIOS_TFE)
@@ -105,6 +106,8 @@ bool configurePlatformPaths() {
     GLuint _depthRenderbuffer;
     GLint _drawableWidth;
     GLint _drawableHeight;
+    UILabel* _startupLabel;
+    BOOL _startupScheduled;
 }
 
 + (Class)layerClass {
@@ -132,6 +135,21 @@ bool configurePlatformPaths() {
     NSAssert(_context != nil, @"Unable to create an OpenGL ES 2 context");
     SeriousIOS_SetPresentCallback(&SeriousIOSPresent, (__bridge void*)self);
     SeriousIOS_SetGLContext((__bridge void*)_context, &SeriousIOSMakeCurrent);
+
+    _startupLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    _startupLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _startupLabel.textAlignment = NSTextAlignmentCenter;
+    _startupLabel.numberOfLines = 0;
+    _startupLabel.font = [UIFont monospacedSystemFontOfSize:15.0 weight:UIFontWeightMedium];
+    _startupLabel.textColor = UIColor.whiteColor;
+    _startupLabel.text = [NSString stringWithFormat:@"SeriousiOS %@\nPreparing core engine checkpoint…", kEncounterName];
+    [self addSubview:_startupLabel];
+    [NSLayoutConstraint activateConstraints:@[
+        [_startupLabel.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [_startupLabel.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+        [_startupLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.safeAreaLayoutGuide.leadingAnchor constant:24.0],
+        [_startupLabel.trailingAnchor constraintLessThanOrEqualToAnchor:self.safeAreaLayoutGuide.trailingAnchor constant:-24.0],
+    ]];
     return self;
 }
 
@@ -191,6 +209,38 @@ bool configurePlatformPaths() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     SeriousIOS_SetSDLWindowSize(_drawableWidth, _drawableHeight);
     [self presentDrawable];
+    [self scheduleCoreEngineStartupIfNeeded];
+}
+
+- (void)scheduleCoreEngineStartupIfNeeded {
+    if (_startupScheduled || _drawableWidth <= 0 || _drawableHeight <= 0) {
+        return;
+    }
+    _startupScheduled = YES;
+    _startupLabel.text = [NSString stringWithFormat:@"SeriousiOS %@\nStarting core engine without game data…", kEncounterName];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        const bool started = SeriousIOS_StartCoreEngine();
+        if (started) {
+            self->_startupLabel.textColor = UIColor.systemGreenColor;
+            self->_startupLabel.text = [NSString stringWithFormat:
+                @"SeriousiOS %@\nCore engine initialized\nWaiting for original game data import",
+                kEncounterName];
+            NSLog(@"SeriousiOS core engine checkpoint passed for %@", kEncounterName);
+            return;
+        }
+
+        const char* startupError = SeriousIOS_GetEngineStartupError();
+        NSString* errorText = startupError == nullptr
+            ? @"Unknown startup failure"
+            : [NSString stringWithUTF8String:startupError];
+        self->_startupLabel.textColor = UIColor.systemRedColor;
+        self->_startupLabel.text = [NSString stringWithFormat:
+            @"SeriousiOS %@\nCore engine startup failed\n%@",
+            kEncounterName,
+            errorText];
+        NSLog(@"SeriousiOS core engine checkpoint failed for %@: %@", kEncounterName, errorText);
+    });
 }
 
 - (void)destroyDrawable {
@@ -281,6 +331,11 @@ static int SeriousIOSMakeCurrent(void* context) {
     self.window.rootViewController = [[SeriousIOSViewController alloc] init];
     [self.window makeKeyAndVisible];
     return YES;
+}
+
+- (void)applicationWillTerminate:(UIApplication*)application {
+    (void)application;
+    SeriousIOS_StopCoreEngine();
 }
 
 @end
