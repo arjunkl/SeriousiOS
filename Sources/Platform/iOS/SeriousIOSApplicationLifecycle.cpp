@@ -9,6 +9,7 @@
 #include <SDL.h>
 
 #include <cstdio>
+#include <cstring>
 
 extern BOOL Init(HINSTANCE instance, int showCommand, CTString commandLine);
 extern void End(void);
@@ -24,7 +25,9 @@ namespace {
 
 bool gApplicationInitialized = false;
 bool gApplicationSuspended = false;
+bool gFirstFrameCompleted = false;
 char gApplicationError[1024] = {};
+char gApplicationStage[256] = "idle";
 
 void setError(const char* message) {
     std::snprintf(
@@ -35,9 +38,17 @@ void setError(const char* message) {
     gApplicationError[sizeof(gApplicationError) - 1] = '\0';
 }
 
+const char* checkpointRoot() {
+    const char* userPath = SeriousIOS_GetUserPath();
+    if (userPath != nullptr && *userPath != '\0') {
+        return userPath;
+    }
+    return SeriousIOS_GetTemporaryPath();
+}
+
 void writeCheckpoint(const char* state) {
-    const char* temporaryPath = SeriousIOS_GetTemporaryPath();
-    if (temporaryPath == nullptr || *temporaryPath == '\0') {
+    const char* root = checkpointRoot();
+    if (root == nullptr || *root == '\0') {
         return;
     }
 
@@ -46,7 +57,7 @@ void writeCheckpoint(const char* state) {
         markerPath,
         sizeof(markerPath),
         "%sapplication-runtime-checkpoint.txt",
-        temporaryPath);
+        root);
     markerPath[sizeof(markerPath) - 1] = '\0';
 
     FILE* marker = std::fopen(markerPath, "wb");
@@ -54,7 +65,9 @@ void writeCheckpoint(const char* state) {
         return;
     }
     std::fprintf(marker, "state=%s\n", state == nullptr ? "unknown" : state);
+    std::fprintf(marker, "stage=%s\n", gApplicationStage);
     std::fprintf(marker, "error=%s\n", gApplicationError);
+    std::fflush(marker);
     std::fclose(marker);
 }
 
@@ -85,27 +98,46 @@ void configureInitialDisplayMode() {
 
 } // namespace
 
+extern "C" void SeriousIOS_ApplicationSetStage(const char* stage) {
+    std::snprintf(
+        gApplicationStage,
+        sizeof(gApplicationStage),
+        "%s",
+        stage == nullptr ? "unknown" : stage);
+    gApplicationStage[sizeof(gApplicationStage) - 1] = '\0';
+    writeCheckpoint(gApplicationInitialized ? "running" : "initializing");
+}
+
+extern "C" const char* SeriousIOS_ApplicationGetStage(void) {
+    return gApplicationStage;
+}
+
 extern "C" bool SeriousIOS_ApplicationInitialize(void) {
     if (gApplicationInitialized) {
         return true;
     }
 
     gApplicationError[0] = '\0';
-    writeCheckpoint("starting");
+    gFirstFrameCompleted = false;
+    SeriousIOS_ApplicationSetStage("application-entry");
     if (!SeriousIOS_ArePathsConfigured()) {
         return fail("SeriousiOS paths were not configured before application startup");
     }
+    SeriousIOS_ApplicationSetStage("activate-eagl-context");
     if (SeriousIOS_MakeGLContextCurrent() != 0) {
         return fail("SeriousiOS could not activate the EAGL context before application startup");
     }
 
+    SeriousIOS_ApplicationSetStage("configure-initial-display-mode");
     configureInitialDisplayMode();
     sam_bAutoPlayDemos = FALSE;
 
     try {
+        SeriousIOS_ApplicationSetStage("upstream-init-entry");
         if (!Init(nullptr, 0, CTString(""))) {
             return fail("The upstream Serious Sam Init function returned false");
         }
+        SeriousIOS_ApplicationSetStage("upstream-init-returned");
     } catch (const char* error) {
         return fail(error);
     } catch (...) {
@@ -114,12 +146,14 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
 
     _bRunning = TRUE;
     _bQuitScreen = FALSE;
+    SeriousIOS_ApplicationSetStage("start-menus");
     if (!bMenuActive) {
         StartMenus();
     }
     bMenuRendering = TRUE;
     gApplicationSuspended = false;
     gApplicationInitialized = true;
+    SeriousIOS_ApplicationSetStage("application-initialized");
     writeCheckpoint("initialized");
     return true;
 }
@@ -135,6 +169,11 @@ extern "C" bool SeriousIOS_ApplicationFrame(void) {
         return fail("Serious Sam application frame has no Game object");
     }
 
+    if (!gFirstFrameCompleted) {
+        SeriousIOS_ApplicationSetStage("first-frame-entry");
+        writeCheckpoint("frame-starting");
+    }
+
     try {
         _bWindowChanging = FALSE;
         UpdateInputEnabledState();
@@ -144,6 +183,12 @@ extern "C" bool SeriousIOS_ApplicationFrame(void) {
         return fail(error);
     } catch (...) {
         return fail("Serious Sam application frame threw an unknown exception");
+    }
+
+    if (!gFirstFrameCompleted) {
+        gFirstFrameCompleted = true;
+        SeriousIOS_ApplicationSetStage("first-frame-complete");
+        writeCheckpoint("first-frame-complete");
     }
     return _bRunning != FALSE;
 }
@@ -156,6 +201,7 @@ extern "C" void SeriousIOS_ApplicationSuspend(void) {
     if (_pNetwork != nullptr) {
         _pNetwork->SetLocalPause(TRUE);
     }
+    SeriousIOS_ApplicationSetStage("suspended");
     writeCheckpoint("suspended");
 }
 
@@ -167,6 +213,7 @@ extern "C" void SeriousIOS_ApplicationResume(void) {
         _pNetwork->SetLocalPause(FALSE);
     }
     gApplicationSuspended = false;
+    SeriousIOS_ApplicationSetStage("resumed");
     writeCheckpoint("initialized");
 }
 
@@ -177,6 +224,7 @@ extern "C" void SeriousIOS_ApplicationShutdown(void) {
 
     gApplicationSuspended = true;
     _bRunning = FALSE;
+    SeriousIOS_ApplicationSetStage("shutdown-entry");
     if (_pGame != nullptr && _pGame->gm_bGameOn) {
         _pGame->StopGame();
     }
@@ -186,6 +234,7 @@ extern "C" void SeriousIOS_ApplicationShutdown(void) {
         setError("Serious Sam application shutdown threw an exception");
     }
     gApplicationInitialized = false;
+    SeriousIOS_ApplicationSetStage("stopped");
     writeCheckpoint("stopped");
 }
 
