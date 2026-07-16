@@ -70,6 +70,13 @@ def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
         "#if (!defined __INTEL_COMPILER) && (!defined PLATFORM_MACOSX) && (!defined PLATFORM_IOS)",
     )
 
+    zconf = root / "Engine/zlib/zconf.h"
+    counts["zlib_byte_type"] = replace_exact(
+        zconf,
+        "#if !defined(MACOS) && !defined(TARGET_OS_MAC)",
+        "#if !defined(MACOS) && (!defined(TARGET_OS_MAC) || defined(PLATFORM_IOS))",
+    )
+
     for relative in (
         "Engine/World/WorldRayCasting.cpp",
         "Engine/Models/RenderModel_View.cpp",
