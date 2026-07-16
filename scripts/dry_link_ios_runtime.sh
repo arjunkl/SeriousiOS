@@ -86,7 +86,6 @@ printf '%q ' "$CXX" \
   "${link_objects[@]}" \
   "${archive_arguments[@]}" \
   -Wl,-dead_strip \
-  -Wl,-undefined,error \
   -framework Foundation \
   -framework UIKit \
   -framework CoreFoundation \
@@ -109,7 +108,6 @@ set +e
   "${link_objects[@]}" \
   "${archive_arguments[@]}" \
   -Wl,-dead_strip \
-  -Wl,-undefined,error \
   -framework Foundation \
   -framework UIKit \
   -framework CoreFoundation \
