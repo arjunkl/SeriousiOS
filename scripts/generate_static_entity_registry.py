@@ -12,27 +12,68 @@ SYMBOL_RE = re.compile(
     r'extern\s+"C"\s+DECL_DLL\s+CDLLEntityClass\s+'
     r'([A-Za-z_][A-Za-z0-9_]*_DLLClass)\s*;'
 )
+ENTITY_RE = re.compile(r"(?m)^\s*entity\(\s*([^\s)#]+)\s*\)")
 
 ENCOUNTER_PACKAGES = {
-    "TFE": ("Engine/Classes", "Entities"),
-    "TSE": ("Engine/Classes", "EntitiesMP"),
+    "TFE": ("Engine/Classes/", "Entities/"),
+    "TSE": ("Engine/Classes/", "EntitiesMP/"),
 }
 
 
-def discover_symbols(root: Path, encounter: str) -> tuple[list[str], list[str]]:
-    symbols: set[str] = set()
-    scanned_packages: list[str] = []
+def selected_entities(upstream: Path, encounter: str) -> list[str]:
+    cmake = upstream / f"Sam{encounter}" / "Sources" / "CMakeLists.txt"
+    if not cmake.is_file():
+        raise FileNotFoundError(cmake)
 
-    for relative in ENCOUNTER_PACKAGES[encounter]:
-        package_root = root / relative
-        if not package_root.is_dir():
-            raise FileNotFoundError(package_root)
-        scanned_packages.append(relative)
-        for header in package_root.rglob("*.h"):
-            text = header.read_text(encoding="utf-8", errors="ignore")
-            symbols.update(SYMBOL_RE.findall(text))
+    text = cmake.read_text(encoding="utf-8", errors="replace")
+    # Remove line comments so dormant examples cannot enter the static registry.
+    uncommented = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+    prefixes = ENCOUNTER_PACKAGES[encounter]
+    selected = sorted(
+        {
+            entity
+            for entity in ENTITY_RE.findall(uncommented)
+            if entity.startswith(prefixes)
+        }
+    )
+    if len(selected) < 100:
+        raise RuntimeError(
+            f"{encounter}: expected a complete CMake-selected entity set, "
+            f"found only {len(selected)} entries"
+        )
+    return selected
 
-    return sorted(symbols), scanned_packages
+
+def discover_symbols(
+    generated_root: Path,
+    upstream: Path,
+    encounter: str,
+) -> tuple[list[str], list[str]]:
+    entities = selected_entities(upstream, encounter)
+    symbol_by_entity: dict[str, str] = {}
+
+    for entity in entities:
+        header = generated_root / f"{entity}.h"
+        if not header.is_file():
+            raise FileNotFoundError(
+                f"{encounter}: generated header missing for CMake entity {entity}: {header}"
+            )
+        matches = sorted(set(SYMBOL_RE.findall(header.read_text(encoding="utf-8", errors="ignore"))))
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"{encounter}: expected one DLLClass export in {header}, found {matches}"
+            )
+        symbol_by_entity[entity] = matches[0]
+
+    symbols = sorted(set(symbol_by_entity.values()))
+    if len(symbols) != len(symbol_by_entity):
+        duplicates: dict[str, list[str]] = {}
+        for entity, symbol in symbol_by_entity.items():
+            duplicates.setdefault(symbol, []).append(entity)
+        repeated = {symbol: paths for symbol, paths in duplicates.items() if len(paths) > 1}
+        raise RuntimeError(f"{encounter}: duplicate entity exports: {repeated}")
+
+    return symbols, entities
 
 
 def render(encounter: str, symbols: list[str]) -> str:
@@ -73,19 +114,18 @@ def main() -> int:
     parser.add_argument("generated_root", type=Path)
     parser.add_argument("encounter", choices=("TFE", "TSE"))
     parser.add_argument("output", type=Path)
+    parser.add_argument("--upstream", type=Path, required=True)
     parser.add_argument("--manifest", type=Path)
     args = parser.parse_args()
 
     root = args.generated_root.resolve()
+    upstream = args.upstream.resolve()
     if not root.is_dir():
         raise SystemExit(f"generated root does not exist: {root}")
+    if not upstream.is_dir():
+        raise SystemExit(f"upstream root does not exist: {upstream}")
 
-    symbols, scanned_packages = discover_symbols(root, args.encounter)
-    if len(symbols) < 100:
-        raise SystemExit(
-            f"expected a complete {args.encounter} entity package, "
-            f"found only {len(symbols)} symbols"
-        )
+    symbols, entities = discover_symbols(root, upstream, args.encounter)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(render(args.encounter, symbols), encoding="utf-8")
@@ -97,7 +137,9 @@ def main() -> int:
             {
                 "encounter": args.encounter,
                 "generated_root": str(root),
-                "scanned_packages": scanned_packages,
+                "upstream_root": str(upstream),
+                "selected_entity_count": len(entities),
+                "selected_entities": entities,
                 "symbol_count": len(symbols),
                 "symbols": symbols,
             },
@@ -109,8 +151,8 @@ def main() -> int:
     )
 
     print(
-        f"{args.encounter}: generated registry for {len(symbols)} entity symbols "
-        f"from {', '.join(scanned_packages)}"
+        f"{args.encounter}: generated registry for {len(symbols)} "
+        f"CMake-selected entity symbols"
     )
     return 0
 
