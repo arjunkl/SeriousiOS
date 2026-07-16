@@ -7,23 +7,24 @@ StaticSymbolRegistry& StaticSymbolRegistry::shared() noexcept {
     return registry;
 }
 
-bool StaticSymbolRegistry::registerSymbol(std::string_view name, void* address) noexcept {
-    if (name.empty() || address == nullptr) {
+bool StaticSymbolRegistry::registerSymbol(const char* name, void* address) noexcept {
+    if (name == nullptr || *name == '\0' || address == nullptr) {
         return false;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    auto [iterator, inserted] = symbols_.emplace(std::string(name), address);
-    return inserted || iterator->second == address;
+    const std::pair<std::unordered_map<std::string, void*>::iterator, bool> result =
+        symbols_.emplace(name, address);
+    return result.second || result.first->second == address;
 }
 
-void* StaticSymbolRegistry::findSymbol(std::string_view name) const noexcept {
-    if (name.empty()) {
+void* StaticSymbolRegistry::findSymbol(const char* name) const noexcept {
+    if (name == nullptr || *name == '\0') {
         return nullptr;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto iterator = symbols_.find(std::string(name));
+    const std::unordered_map<std::string, void*>::const_iterator iterator = symbols_.find(name);
     return iterator == symbols_.end() ? nullptr : iterator->second;
 }
 
@@ -40,11 +41,11 @@ void StaticSymbolRegistry::clearForTests() noexcept {
 } // namespace seriousios
 
 extern "C" bool SeriousIOS_RegisterStaticSymbol(const char* name, void* address) noexcept {
-    return name != nullptr && seriousios::StaticSymbolRegistry::shared().registerSymbol(name, address);
+    return seriousios::StaticSymbolRegistry::shared().registerSymbol(name, address);
 }
 
 extern "C" void* SeriousIOS_FindStaticSymbol(const char* name) noexcept {
-    return name == nullptr ? nullptr : seriousios::StaticSymbolRegistry::shared().findSymbol(name);
+    return seriousios::StaticSymbolRegistry::shared().findSymbol(name);
 }
 
 extern "C" std::size_t SeriousIOS_StaticSymbolCount() noexcept {
