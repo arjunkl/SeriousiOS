@@ -1,8 +1,10 @@
+#include "SeriousIOSDiagnostics.h"
 #include "SeriousIOSPlatformBridge.h"
 
 #include <OpenGLES/ES1/gl.h>
 #include <OpenGLES/ES1/glext.h>
 
+#include <atomic>
 #include <cstring>
 #include <type_traits>
 
@@ -10,6 +12,8 @@ namespace {
 
 constexpr GLenum kLegacyClamp = 0x2900;
 constexpr GLenum kTextureMaxAnisotropy = 0x84FE;
+
+std::atomic<GLenum> gPendingError{GL_NO_ERROR};
 
 template <typename Function>
 void* functionAddress(Function function) {
@@ -67,6 +71,26 @@ GLint normalizedInternalFormat(GLenum externalFormat) {
     }
 }
 
+GLenum captureError() {
+    const GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        GLenum expected = GL_NO_ERROR;
+        gPendingError.compare_exchange_strong(
+            expected,
+            error,
+            std::memory_order_release,
+            std::memory_order_relaxed);
+    }
+    return error;
+}
+
+GLenum seriousIOSGetError() {
+    const GLenum pending = gPendingError.exchange(
+        GL_NO_ERROR,
+        std::memory_order_acq_rel);
+    return pending != GL_NO_ERROR ? pending : glGetError();
+}
+
 void seriousIOSTexImage2D(
     GLenum target,
     GLint level,
@@ -77,20 +101,29 @@ void seriousIOSTexImage2D(
     GLenum format,
     GLenum type,
     const GLvoid* pixels) {
-    (void)internalFormat;
+    const GLint normalized = normalizedInternalFormat(format);
     glTexImage2D(
         target,
         level,
-        normalizedInternalFormat(format),
+        normalized,
         width,
         height,
         border,
         format,
         type,
         pixels);
+    const GLenum error = captureError();
+    SeriousIOS_DiagnosticsRecordTextureUpload(
+        static_cast<uint32_t>(internalFormat),
+        static_cast<uint32_t>(normalized),
+        width,
+        height,
+        level,
+        static_cast<uint32_t>(error));
 }
 
 void seriousIOSTexParameteri(GLenum target, GLenum parameter, GLint value) {
+    const GLint requested = value;
     if (target == GL_TEXTURE_2D
         && (parameter == GL_TEXTURE_WRAP_S || parameter == GL_TEXTURE_WRAP_T)
         && static_cast<GLenum>(value) == kLegacyClamp) {
@@ -98,13 +131,26 @@ void seriousIOSTexParameteri(GLenum target, GLenum parameter, GLint value) {
     }
 
     if (parameter == kTextureMaxAnisotropy && !supportsAnisotropy()) {
+        SeriousIOS_DiagnosticsLog(
+            "texture",
+            "ignored_unsupported_anisotropy value=%d",
+            value);
         return;
     }
 
     glTexParameteri(target, parameter, value);
+    const GLenum error = captureError();
+    if (requested != value || error != GL_NO_ERROR) {
+        SeriousIOS_DiagnosticsRecordTextureParameterNormalization(
+            static_cast<uint32_t>(parameter),
+            requested,
+            value,
+            static_cast<uint32_t>(error));
+    }
 }
 
 void seriousIOSTexParameterf(GLenum target, GLenum parameter, GLfloat value) {
+    const GLfloat requested = value;
     if (target == GL_TEXTURE_2D
         && (parameter == GL_TEXTURE_WRAP_S || parameter == GL_TEXTURE_WRAP_T)
         && static_cast<GLenum>(value) == kLegacyClamp) {
@@ -112,10 +158,22 @@ void seriousIOSTexParameterf(GLenum target, GLenum parameter, GLfloat value) {
     }
 
     if (parameter == kTextureMaxAnisotropy && !supportsAnisotropy()) {
+        SeriousIOS_DiagnosticsLog(
+            "texture",
+            "ignored_unsupported_anisotropy value=%g",
+            static_cast<double>(value));
         return;
     }
 
     glTexParameterf(target, parameter, value);
+    const GLenum error = captureError();
+    if (requested != value || error != GL_NO_ERROR) {
+        SeriousIOS_DiagnosticsRecordTextureParameterNormalization(
+            static_cast<uint32_t>(parameter),
+            static_cast<int>(requested),
+            static_cast<int>(value),
+            static_cast<uint32_t>(error));
+    }
 }
 
 } // namespace
@@ -124,6 +182,9 @@ extern "C" void* SeriousIOS_GetOpenGLTextureCompatProcAddress(
     const char* procedure) {
     if (procedure == nullptr || *procedure == '\0') {
         return nullptr;
+    }
+    if (std::strcmp(procedure, "glGetError") == 0) {
+        return functionAddress(&seriousIOSGetError);
     }
     if (std::strcmp(procedure, "glTexImage2D") == 0) {
         return functionAddress(&seriousIOSTexImage2D);
