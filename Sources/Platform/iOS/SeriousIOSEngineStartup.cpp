@@ -21,6 +21,36 @@ void setStartupError(const char* message) {
     gStartupError[sizeof(gStartupError) - 1] = '\0';
 }
 
+void writeCheckpoint(const char* state, const char* error) {
+    const char* temporaryPath = SeriousIOS_GetTemporaryPath();
+    if (temporaryPath == nullptr || *temporaryPath == '\0') {
+        return;
+    }
+
+    char markerPath[2048] = {};
+    std::snprintf(
+        markerPath,
+        sizeof(markerPath),
+        "%score-startup-checkpoint.txt",
+        temporaryPath);
+    markerPath[sizeof(markerPath) - 1] = '\0';
+
+    FILE* marker = std::fopen(markerPath, "wb");
+    if (marker == nullptr) {
+        return;
+    }
+    std::fprintf(marker, "state=%s\n", state == nullptr ? "unknown" : state);
+    std::fprintf(marker, "error=%s\n", error == nullptr ? "" : error);
+    std::fclose(marker);
+}
+
+bool failStartup(const char* message) {
+    setStartupError(message);
+    writeCheckpoint("failed", gStartupError);
+    gEngineState.store(SeriousIOSEngineStateFailed, std::memory_order_release);
+    return false;
+}
+
 } // namespace
 
 extern "C" bool SeriousIOS_StartCoreEngine(void) {
@@ -33,15 +63,14 @@ extern "C" bool SeriousIOS_StartCoreEngine(void) {
     }
 
     gStartupError[0] = '\0';
+    writeCheckpoint("starting", nullptr);
     if (!SeriousIOS_ArePathsConfigured()) {
-        setStartupError("SeriousiOS sandbox paths were not configured before engine startup");
-        gEngineState.store(SeriousIOSEngineStateFailed, std::memory_order_release);
-        return false;
+        return failStartup(
+            "SeriousiOS sandbox paths were not configured before engine startup");
     }
     if (SeriousIOS_MakeGLContextCurrent() != 0) {
-        setStartupError("SeriousiOS could not activate the EAGL context before engine startup");
-        gEngineState.store(SeriousIOSEngineStateFailed, std::memory_order_release);
-        return false;
+        return failStartup(
+            "SeriousiOS could not activate the EAGL context before engine startup");
     }
 
     try {
@@ -49,16 +78,14 @@ extern "C" bool SeriousIOS_StartCoreEngine(void) {
         // initialization. This validates the core engine and platform layer without
         // requiring proprietary Serious Sam data archives.
         SE_InitEngine(SeriousIOS_GetExecutablePath(), CTString(""));
+        writeCheckpoint("initialized", nullptr);
         gEngineState.store(SeriousIOSEngineStateInitialized, std::memory_order_release);
         return true;
     } catch (const char* error) {
-        setStartupError(error);
+        return failStartup(error);
     } catch (...) {
-        setStartupError("Serious Engine startup threw an unknown exception");
+        return failStartup("Serious Engine startup threw an unknown exception");
     }
-
-    gEngineState.store(SeriousIOSEngineStateFailed, std::memory_order_release);
-    return false;
 }
 
 extern "C" void SeriousIOS_StopCoreEngine(void) {
@@ -70,6 +97,7 @@ extern "C" void SeriousIOS_StopCoreEngine(void) {
         return;
     }
     SE_EndEngine();
+    writeCheckpoint("stopped", nullptr);
 }
 
 extern "C" SeriousIOSEngineState SeriousIOS_GetEngineState(void) {
