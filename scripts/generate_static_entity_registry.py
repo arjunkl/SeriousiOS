@@ -143,6 +143,14 @@ extern "C" std::size_t {prefix}_EntitySymbolCount() noexcept {{
 '''
 
 
+def write_manifest(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("generated_root", type=Path)
@@ -154,36 +162,50 @@ def main() -> int:
 
     root = args.generated_root.resolve()
     upstream = args.upstream.resolve()
+    manifest_path = args.manifest or args.output.with_suffix(".json")
     if not root.is_dir():
         raise SystemExit(f"generated root does not exist: {root}")
     if not upstream.is_dir():
         raise SystemExit(f"upstream root does not exist: {upstream}")
 
-    symbols, entities, support_units = discover_symbols(root, upstream, args.encounter)
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(render(args.encounter, symbols), encoding="utf-8")
-
-    manifest_path = args.manifest or args.output.with_suffix(".json")
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
-        json.dumps(
+    try:
+        symbols, entities, support_units = discover_symbols(root, upstream, args.encounter)
+    except Exception as exc:
+        try:
+            entities = selected_entities(upstream, args.encounter)
+        except Exception:
+            entities = []
+        write_manifest(
+            manifest_path,
             {
+                "audit_failed": True,
                 "encounter": args.encounter,
+                "error": str(exc),
                 "generated_root": str(root),
                 "upstream_root": str(upstream),
                 "selected_entity_count": len(entities),
                 "selected_entities": entities,
-                "non_loadable_support_count": len(support_units),
-                "non_loadable_support_units": support_units,
-                "symbol_count": len(symbols),
-                "symbols": symbols,
             },
-            indent=2,
-            sort_keys=True,
         )
-        + "\n",
-        encoding="utf-8",
+        raise
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(render(args.encounter, symbols), encoding="utf-8")
+
+    write_manifest(
+        manifest_path,
+        {
+            "audit_failed": False,
+            "encounter": args.encounter,
+            "generated_root": str(root),
+            "upstream_root": str(upstream),
+            "selected_entity_count": len(entities),
+            "selected_entities": entities,
+            "non_loadable_support_count": len(support_units),
+            "non_loadable_support_units": support_units,
+            "symbol_count": len(symbols),
+            "symbols": symbols,
+        },
     )
 
     print(
