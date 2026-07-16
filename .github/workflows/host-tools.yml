@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  build-and-smoke-ecc:
+  build-and-generate:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout SeriousiOS
         uses: actions/checkout@v4
@@ -29,6 +29,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/build_host_tools.sh
           bash -n scripts/smoke_generate_entities.sh
+          bash -n scripts/generate_all_sources.sh
           python3 -m py_compile scripts/report_dependency_graph.py
 
       - name: Install generator dependencies
@@ -73,6 +74,18 @@ jobs:
             build/host-tools \
             build/generated-smoke
 
+      - name: Generate complete TFE and TSE source corpus
+        shell: bash
+        env:
+          FLEX_BIN: /opt/homebrew/opt/flex/bin/flex
+          BISON_BIN: /opt/homebrew/opt/bison/bin/bison
+        run: |
+          set -euo pipefail
+          bash scripts/generate_all_sources.sh \
+            upstream/SeriousSamClassic \
+            build/host-tools \
+            build/generated-all
+
       - name: Upload host-tool evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,5 +95,10 @@ jobs:
             build/dependency-graph
             build/host-tools
             build/generated-smoke
+            build/generated-all/full-generation-manifest.txt
+            build/generated-all/TFE/summary.txt
+            build/generated-all/TFE/generated.sha256
+            build/generated-all/TSE/summary.txt
+            build/generated-all/TSE/generated.sha256
           if-no-files-found: warn
           retention-days: 14
