@@ -19,11 +19,11 @@ PLATFORM_ROOT="$REPOSITORY_ROOT/Sources/Platform/iOS"
 case "$ENCOUNTER" in
   TFE)
     define=SERIOUSIOS_TFE
-    archives=(engine_safemath Engine Game Shaders Entities)
+    archives=(engine_safemath Engine Game Shaders Entities SeriousIOSApplication)
     ;;
   TSE)
     define=SERIOUSIOS_TSE
-    archives=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP)
+    archives=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP SeriousIOSApplicationMP)
     ;;
   *)
     echo "encounter must be TFE or TSE" >&2
@@ -81,8 +81,8 @@ link_objects=(
 )
 
 # Do not enable dead stripping in this audit. Every object from every runtime
-# archive must remain eligible for relocation so dormant startup, filesystem,
-# lifecycle, and error paths cannot hide unresolved or duplicate symbols.
+# and application archive must remain eligible for relocation so dormant startup,
+# menu, filesystem, lifecycle, and error paths cannot hide unresolved symbols.
 printf '%q ' "$CXX" \
   -target arm64-apple-ios15.0 \
   -isysroot "$SDK_PATH" \
