@@ -33,6 +33,7 @@ void* SeriousIOS_GetGLContext(void);
 int SeriousIOS_MakeGLContextCurrent(void);
 
 void* SeriousIOS_GetOpenGLCompatProcAddress(const char* procedure);
+void* SeriousIOS_GetOpenGLTextureCompatProcAddress(const char* procedure);
 bool SeriousIOS_ValidateOpenGLCompatibility(void);
 const char* SeriousIOS_GetOpenGLCompatibilityError(void);
 
