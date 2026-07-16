@@ -10,6 +10,7 @@ UPSTREAM=$(cd "$1" && pwd)
 OUTPUT=$2
 mkdir -p "$OUTPUT"
 OUTPUT=$(cd "$OUTPUT" && pwd)
+exec > >(tee "$OUTPUT/host-tools-build.log") 2>&1
 
 find_tool() {
   local requested=$1
@@ -39,6 +40,7 @@ build_ecc() {
   local build_dir="$stage_root/Ecc"
   local install_dir="$OUTPUT/${encounter}/bin"
 
+  echo "::group::Build ecc-se for ${encounter}"
   test -d "$source_dir"
   rm -rf "$stage_root"
   mkdir -p "$build_dir" "$install_dir"
@@ -54,17 +56,21 @@ build_ecc() {
   # Generate and compile from the staging root so the host build mirrors the
   # include topology used by the upstream CMake project.
   pushd "$stage_root" >/dev/null
+  set -x
   "$FLEX_BIN" -oEcc/Scanner.cpp Ecc/Scanner.l
   "$BISON_BIN" -oEcc/Parser.cpp Ecc/Parser.y -d
+  set +x
 
   # Upstream's CMake pipeline normalizes Bison's C++-named header to Parser.h.
   if [[ -f Ecc/Parser.hpp ]]; then
     cp Ecc/Parser.hpp Ecc/Parser.h
   elif [[ ! -f Ecc/Parser.h ]]; then
     echo "Bison did not produce Ecc/Parser.hpp or Ecc/Parser.h" >&2
+    find Ecc -maxdepth 1 -type f -print | sort
     exit 1
   fi
 
+  set -x
   "$CXX_BIN" \
     -std=c++14 \
     -DPLATFORM_UNIX=1 \
@@ -74,10 +80,12 @@ build_ecc() {
     -I. \
     Ecc/Main.cpp Ecc/Parser.cpp Ecc/Scanner.cpp \
     -o "$install_dir/ecc-se"
+  set +x
   popd >/dev/null
 
   test -x "$install_dir/ecc-se"
   file "$install_dir/ecc-se"
+  echo "::endgroup::"
 }
 
 build_ecc TFE
