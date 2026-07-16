@@ -24,7 +24,7 @@
 - TFE: `43f5fed8ebc0d6b5a73779a8b4ac68e628ba775d180c901946ccb05804a2c67c`
 - TSE: `60f6311b65e7ca905ec81fc4dee840576da9f4a880984f866dccdd6955f55fa1`
 
-These IPA containers are deliberately unsigned and contain no copyrighted Serious Sam data. They are host-shell artifacts for downstream user-controlled signing.
+These IPA containers are deliberately unsigned and contain no copyrighted Serious Sam data. They are host-shell artifacts for downstream user-controlled signing and are not yet expected to initialize the engine or reach a game screen.
 
 ## Host capabilities included
 
