@@ -2,7 +2,7 @@ diff --git a/SamTFE/Sources/SeriousSam/MenuGadgets.cpp b/SamTFE/Sources/SeriousS
 index 8d8c1e6..a7c1a60 100644
 --- a/SamTFE/Sources/SeriousSam/MenuGadgets.cpp
 +++ b/SamTFE/Sources/SeriousSam/MenuGadgets.cpp
-@@ -637,17 +637,12 @@ void CMGHighScore::Render( CDrawPort *pdp)
+@@ -637,17 +637,11 @@ void CMGHighScore::Render( CDrawPort *pdp)
    strHighScores[0][5] = TRANS("Score");
  
    {for (INDEX i=0; i<HIGHSCORE_COUNT; i++) {
@@ -27,7 +27,7 @@ diff --git a/SamTSE/Sources/SeriousSam/MenuGadgets.cpp b/SamTSE/Sources/SeriousS
 index 8d8c1e6..a7c1a60 100644
 --- a/SamTSE/Sources/SeriousSam/MenuGadgets.cpp
 +++ b/SamTSE/Sources/SeriousSam/MenuGadgets.cpp
-@@ -637,17 +637,12 @@ void CMGHighScore::Render( CDrawPort *pdp)
+@@ -637,17 +637,11 @@ void CMGHighScore::Render( CDrawPort *pdp)
    strHighScores[0][5] = TRANS("Score");
  
    {for (INDEX i=0; i<HIGHSCORE_COUNT; i++) {
