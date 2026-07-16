@@ -43,7 +43,7 @@ The final links also include generated entity, Game, and shader registries plus 
 
 ## Why this is stricter than the earlier baseline
 
-The earlier proof used `-dead_strip`. That verified reachable-section closure but allowed dormant startup, filesystem, error, audio, and lifecycle sections to be discarded before relocation. The strict audit removes dead stripping while force-loading every archive, so all compiled runtime sections must resolve successfully.
+The earlier proof used `-dead_strip`. That verified reachable-section closure but allowed dormant startup, filesystem, error, audio, and lifecycle sections to be discarded before relocation. The strict audit removes dead stripping while force-loading every archive, so every compiled runtime object and all of its referenced platform services must resolve successfully.
 
 This exposed and repaired the remaining platform surface rather than leaving it hidden:
 
@@ -72,7 +72,7 @@ This exposed and repaired the remaining platform surface rather than leaving it 
 
 ## What this proves
 
-Both complete Serious Sam Classic runtime graphs, including dormant startup and platform paths, can be compiled and linked as self-contained arm64 iPhoneOS executables without unresolved or duplicate symbols.
+Both complete Serious Sam Classic runtime graphs, including dormant startup and platform objects, can be compiled and linked as self-contained arm64 iPhoneOS executables without unresolved or duplicate symbols.
 
 ## What this does not prove
 
