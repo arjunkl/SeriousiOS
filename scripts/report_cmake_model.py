@@ -8,8 +8,22 @@ import json
 from pathlib import Path
 
 EXPECTED = {
-    "TFE": {"Engine", "Entities", "Game", "Shaders", "engine_safemath"},
-    "TSE": {"EngineMP", "EntitiesMP", "GameMP", "ShadersMP", "engine_safemathMP"},
+    "TFE": {
+        "Engine",
+        "Entities",
+        "Game",
+        "Shaders",
+        "engine_safemath",
+        "SeriousIOSApplication",
+    },
+    "TSE": {
+        "EngineMP",
+        "EntitiesMP",
+        "GameMP",
+        "ShadersMP",
+        "engine_safemathMP",
+        "SeriousIOSApplicationMP",
+    },
 }
 
 
@@ -105,7 +119,7 @@ def main() -> int:
 
     print(
         f"{args.encounter}: {len(targets)} targets, "
-        f"{len(EXPECTED[args.encounter])} required static runtime libraries, no executables"
+        f"{len(EXPECTED[args.encounter])} required static libraries, no executables"
     )
     return 0
 
