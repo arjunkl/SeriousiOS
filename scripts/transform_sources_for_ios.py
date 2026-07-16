@@ -149,6 +149,11 @@ def adapt_serioussam_application(path: Path) -> int:
     changes = 0
     changes += replace_exact(
         path,
+        "#if !defined(PLATFORM_MACOSX) && !defined(PLATFORM_FREEBSD)",
+        "#if !defined(PLATFORM_MACOSX) && !defined(PLATFORM_FREEBSD) && !defined(PLATFORM_IOS)",
+    )
+    changes += replace_exact(
+        path,
         "CGame *_pGame = NULL;",
         '''#ifdef PLATFORM_IOS
 extern CGame *_pGame;
