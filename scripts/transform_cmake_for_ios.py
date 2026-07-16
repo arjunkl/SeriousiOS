@@ -58,15 +58,17 @@ if(MSVC)''',
         f"{path}: platform selection",
     )
 
-    text = text.replace(
+    text = replace_once(
+        text,
         'if(NOT PANDORA AND NOT PYRA AND NOT RPI4 AND NOT (MACOSX AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64"))',
         'if(NOT PANDORA AND NOT PYRA AND NOT RPI4 AND NOT IOS AND NOT (MACOSX AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64"))',
-        1,
+        f"{path}: architecture flags",
     )
-    text = text.replace(
+    text = replace_once(
+        text,
         'if(NOT PYRA AND NOT PANDORA AND ${CMAKE_HOST_SYSTEM_PROCESSOR} MATCHES "arm*")',
         'if(NOT PYRA AND NOT PANDORA AND NOT IOS AND ${CMAKE_HOST_SYSTEM_PROCESSOR} MATCHES "arm*")',
-        1,
+        f"{path}: host architecture flags",
     )
 
     text = regex_once(
@@ -87,6 +89,39 @@ if(MSVC)''',
 \t\tinclude_directories("/usr/X11/include/")
 \telseif(WINDOWS)''',
         f"{path}: compiler platform definitions",
+    )
+
+    text = replace_once(
+        text,
+        '''if(XPLUS)
+    execute_process (
+        COMMAND bash -c "cp -fr ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeaponsHD.es ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeapons.es;"
+        OUTPUT_VARIABLE outVar
+    )
+    message(STATUS "Compile a XPLUS modification")
+else()
+    execute_process (
+        COMMAND bash -c "cp -fr ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeapons_old.es ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeapons.es;"
+        OUTPUT_VARIABLE outVar
+    )
+    message(STATUS "Compile a standard game")
+endif()''',
+        '''if(IOS)
+    message(STATUS "SeriousiOS preserves entity inputs during configure")
+elseif(XPLUS)
+    execute_process (
+        COMMAND bash -c "cp -fr ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeaponsHD.es ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeapons.es;"
+        OUTPUT_VARIABLE outVar
+    )
+    message(STATUS "Compile a XPLUS modification")
+else()
+    execute_process (
+        COMMAND bash -c "cp -fr ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeapons_old.es ${CMAKE_ADD_TARGET_DIR}/Entities${MP}/PlayerWeapons.es;"
+        OUTPUT_VARIABLE outVar
+    )
+    message(STATUS "Compile a standard game")
+endif()''',
+        f"{path}: immutable entity inputs",
     )
 
     text = replace_once(
