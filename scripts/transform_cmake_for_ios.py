@@ -18,7 +18,13 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
-    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+    updated, count = re.subn(
+        pattern,
+        replacement,
+        text,
+        count=1,
+        flags=re.DOTALL | re.MULTILINE,
+    )
     if count != 1:
         raise RuntimeError(f"{label}: expected exactly one regex match, found {count}")
     return updated
@@ -29,7 +35,7 @@ def transform(path: Path) -> None:
 
     text = regex_once(
         text,
-        r'''if\(APPLE\)\n\s+set\(MACOSX TRUE\)\n.*?\nendif\(\)\n\nif\(MSVC\)''',
+        r'''^if\(APPLE\)\n[ \t]+set\(MACOSX TRUE\)\n.*?^endif\(\)\n\n^if\(MSVC\)''',
         '''if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(IOS TRUE)
     set(RPATH_SETTINGS "")
@@ -73,7 +79,7 @@ if(MSVC)''',
 
     text = regex_once(
         text,
-        r'''\tif\(MACOSX\)\n\t\tadd_definitions\(-DPLATFORM_UNIX=1\)\n\s*add_definitions\(-DPLATFORM_MACOSX=1\)\n\s*add_definitions\(-DPRAGMA_ONCE=1\)\n\s*include_directories\("/usr/local/include"\)\n\t\tinclude_directories\("/usr/X11/include/"\)\n\s*elseif\(WINDOWS\)''',
+        r'''^[ \t]*if\(MACOSX\)\n[ \t]*add_definitions\(-DPLATFORM_UNIX=1\)\n[ \t]*add_definitions\(-DPLATFORM_MACOSX=1\)\n[ \t]*add_definitions\(-DPRAGMA_ONCE=1\)\n[ \t]*include_directories\("/usr/local/include"\)\n[ \t]*include_directories\("/usr/X11/include/"\)\n[ \t]*elseif\(WINDOWS\)''',
         '''\tif(IOS)
         add_definitions(-DPLATFORM_UNIX=1)
         add_definitions(-DPLATFORM_IOS=1)
