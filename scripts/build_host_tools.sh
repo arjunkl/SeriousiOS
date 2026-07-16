@@ -35,11 +35,12 @@ printf 'cxx:   %s\n' "$CXX_BIN"
 build_ecc() {
   local encounter=$1
   local source_dir="$UPSTREAM/Sam${encounter}/Sources/Ecc"
-  local build_dir="$OUTPUT/${encounter}/build"
+  local stage_root="$OUTPUT/${encounter}/stage"
+  local build_dir="$stage_root/Ecc"
   local install_dir="$OUTPUT/${encounter}/bin"
 
   test -d "$source_dir"
-  rm -rf "$build_dir"
+  rm -rf "$stage_root"
   mkdir -p "$build_dir" "$install_dir"
 
   cp "$source_dir/Main.cpp" \
@@ -49,15 +50,18 @@ build_ecc() {
      "$source_dir/Scanner.l" \
      "$build_dir/"
 
-  pushd "$build_dir" >/dev/null
-  "$FLEX_BIN" -oScanner.cpp Scanner.l
-  "$BISON_BIN" -oParser.cpp Parser.y -d
+  # Scanner.l intentionally includes Ecc/StdH.h, Ecc/Main.h and Ecc/Parser.h.
+  # Generate and compile from the staging root so the host build mirrors the
+  # include topology used by the upstream CMake project.
+  pushd "$stage_root" >/dev/null
+  "$FLEX_BIN" -oEcc/Scanner.cpp Ecc/Scanner.l
+  "$BISON_BIN" -oEcc/Parser.cpp Ecc/Parser.y -d
 
   # Upstream's CMake pipeline normalizes Bison's C++-named header to Parser.h.
-  if [[ -f Parser.hpp ]]; then
-    cp Parser.hpp Parser.h
-  elif [[ ! -f Parser.h ]]; then
-    echo "Bison did not produce Parser.hpp or Parser.h" >&2
+  if [[ -f Ecc/Parser.hpp ]]; then
+    cp Ecc/Parser.hpp Ecc/Parser.h
+  elif [[ ! -f Ecc/Parser.h ]]; then
+    echo "Bison did not produce Ecc/Parser.hpp or Ecc/Parser.h" >&2
     exit 1
   fi
 
@@ -68,7 +72,7 @@ build_ecc() {
     -Wno-deprecated-register \
     -Wno-write-strings \
     -I. \
-    Main.cpp Parser.cpp Scanner.cpp \
+    Ecc/Main.cpp Ecc/Parser.cpp Ecc/Scanner.cpp \
     -o "$install_dir/ecc-se"
   popd >/dev/null
 
