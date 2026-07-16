@@ -34,6 +34,7 @@ jobs:
           bash -n scripts/build_ios_runtime_archives.sh
           python3 -m py_compile scripts/report_dependency_graph.py
           python3 -m py_compile scripts/generate_static_entity_registry.py
+          python3 -m py_compile scripts/transform_sources_for_ios.py
           python3 -m py_compile scripts/transform_cmake_for_ios.py
           python3 -m py_compile scripts/report_cmake_model.py
 
@@ -114,7 +115,7 @@ jobs:
             -I Sources/Platform/iOS \
             -fsyntax-only build/static-registries/SeriousIOSTSEEntityRegistry.cpp
 
-      - name: Transform upstream CMake graph for iOS
+      - name: Transform upstream source and CMake graphs for iOS
         shell: bash
         run: |
           set -euo pipefail
@@ -123,12 +124,15 @@ jobs:
             2>&1 | tee build/cmake-model/apply-patches.log
 
           set +e
+          python3 scripts/transform_sources_for_ios.py upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/source-transform.log
+          source_status=${PIPESTATUS[0]}
           python3 scripts/transform_cmake_for_ios.py upstream/SeriousSamClassic \
             2>&1 | tee build/cmake-model/transform.log
-          transform_status=${PIPESTATUS[0]}
+          cmake_status=${PIPESTATUS[0]}
           set -e
-          if [[ $transform_status -ne 0 ]]; then
-            exit "$transform_status"
+          if [[ $source_status -ne 0 || $cmake_status -ne 0 ]]; then
+            exit 1
           fi
 
           git -C upstream/SeriousSamClassic diff --check
