@@ -86,6 +86,65 @@ def internalize_tfe_light_coordinate_tables(path: Path) -> int:
     return count
 
 
+def configure_engine_ios_paths(path: Path) -> int:
+    changes = 0
+    changes += replace_exact(
+        path,
+        "#include <Engine/Base/FileSystem.h>\n",
+        '''#include <Engine/Base/FileSystem.h>
+#ifdef PLATFORM_IOS
+#include "SeriousIOSPlatformBridge.h"
+#endif
+''',
+    )
+    changes += replace_exact(
+        path,
+        '''#ifdef PLATFORM_UNIX
+    // rcg01012002 calculate user dir.
+  char buf[MAX_PATH];
+  _pFileSystem->GetUserDirectory(buf, sizeof (buf));
+  _fnmUserDir = CTString(buf);
+#endif
+  try {
+    _fnmApplicationExe.RemoveApplicationPath_t();
+  } catch (const char *strError) {
+    (void) strError;
+    ASSERT(FALSE);
+  }''',
+        '''#ifdef PLATFORM_UNIX
+    // rcg01012002 calculate user dir.
+  char buf[MAX_PATH];
+  _pFileSystem->GetUserDirectory(buf, sizeof (buf));
+  _fnmUserDir = CTString(buf);
+#endif
+#ifdef PLATFORM_IOS
+  ASSERT(SeriousIOS_ArePathsConfigured());
+  _fnmApplicationPath = CTString(SeriousIOS_GetDataPath());
+  _fnmApplicationExe = CTString(SeriousIOS_GetExecutablePath());
+  _fnmUserDir = CTString(SeriousIOS_GetUserPath());
+#endif
+#ifndef PLATFORM_IOS
+  try {
+    _fnmApplicationExe.RemoveApplicationPath_t();
+  } catch (const char *strError) {
+    (void) strError;
+    ASSERT(FALSE);
+  }
+#endif''',
+    )
+    changes += replace_exact(
+        path,
+        '''#ifdef PLATFORM_UNIX
+#if defined(__OpenBSD__) || defined(__FreeBSD__)''',
+        '''#if defined(PLATFORM_IOS)
+  sys_iSysPath = 0;
+  _fnmModLibPath = _fnmApplicationPath;
+#elif defined(PLATFORM_UNIX)
+#if defined(__OpenBSD__) || defined(__FreeBSD__)''',
+    )
+    return changes
+
+
 def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
     root = upstream / f"Sam{encounter}" / "Sources"
     if not root.is_dir():
@@ -104,12 +163,15 @@ def transform_encounter(upstream: Path, encounter: str) -> dict[str, int]:
     #elif (!defined PLATFORM_FREEBSD) && (!defined PLATFORM_MACOSX) && (!defined PLATFORM_IOS)''',
     )
 
-    engine = root / "Engine/Engine.h"
+    engine_header = root / "Engine/Engine.h"
     counts["malloc_header"] = replace_exact(
-        engine,
+        engine_header,
         "#if (!defined __INTEL_COMPILER) && (!defined PLATFORM_MACOSX)",
         "#if (!defined __INTEL_COMPILER) && (!defined PLATFORM_MACOSX) && (!defined PLATFORM_IOS)",
     )
+
+    engine_source = root / "Engine/Engine.cpp"
+    counts["ios_path_contract"] = configure_engine_ios_paths(engine_source)
 
     zconf = root / "Engine/zlib/zconf.h"
     counts["zlib_byte_type"] = replace_exact(
