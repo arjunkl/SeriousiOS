@@ -28,7 +28,6 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/apply_upstream_patches.sh
-          git apply --check patches/0001-detect-ios-platform.patch
 
       - name: Checkout pinned SeriousSamClassic
         shell: bash
