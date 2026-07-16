@@ -30,7 +30,6 @@ def disable_armv7_neon_on_ios(path: Path) -> int:
         if (
             stripped.startswith("#if")
             and "__ARM_NEON__" in line
-            and "PLATFORM_MACOSX" in line
             and "PLATFORM_IOS" not in line
         ):
             newline = "\n" if line.endswith("\n") else ""
@@ -40,7 +39,7 @@ def disable_armv7_neon_on_ios(path: Path) -> int:
 
     if count < 1:
         raise RuntimeError(
-            f"{path}: expected at least one ARM NEON/macOS guard to adapt"
+            f"{path}: expected at least one ARM NEON guard to adapt"
         )
     path.write_text("".join(transformed), encoding="utf-8")
     return count
