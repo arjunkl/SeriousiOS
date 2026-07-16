@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -14,7 +15,7 @@ int conflictingSymbol = 3;
 } // namespace
 
 int main() {
-    auto& registry = seriousios::StaticSymbolRegistry::shared();
+    seriousios::StaticSymbolRegistry& registry = seriousios::StaticSymbolRegistry::shared();
     registry.clearForTests();
 
     assert(registry.size() == 0);
@@ -36,12 +37,12 @@ int main() {
         workers.emplace_back([index, &registry] {
             const std::string name = "Concurrent_" + std::to_string(index);
             void* address = reinterpret_cast<void*>(index + 1);
-            assert(registry.registerSymbol(name, address));
-            assert(registry.findSymbol(name) == address);
+            assert(registry.registerSymbol(name.c_str(), address));
+            assert(registry.findSymbol(name.c_str()) == address);
         });
     }
-    for (auto& worker : workers) {
-        worker.join();
+    for (std::vector<std::thread>::iterator worker = workers.begin(); worker != workers.end(); ++worker) {
+        worker->join();
     }
 
     assert(registry.size() == 18);
