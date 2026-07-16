@@ -1,0 +1,50 @@
+diff --git a/SamTFE/Sources/SeriousSam/MenuGadgets.cpp b/SamTFE/Sources/SeriousSam/MenuGadgets.cpp
+index 8d8c1e6..a7c1a60 100644
+--- a/SamTFE/Sources/SeriousSam/MenuGadgets.cpp
++++ b/SamTFE/Sources/SeriousSam/MenuGadgets.cpp
+@@ -637,17 +637,12 @@ void CMGHighScore::Render( CDrawPort *pdp)
+   strHighScores[0][5] = TRANS("Score");
+ 
+   {for (INDEX i=0; i<HIGHSCORE_COUNT; i++) {
+-    switch(_pGame->gm_ahseHighScores[i].hse_gdDifficulty) {
++    const INDEX iDifficulty = (INDEX)_pGame->gm_ahseHighScores[i].hse_gdDifficulty;
++    switch(iDifficulty) {
+     default:
+       ASSERT(FALSE);
+-#ifdef PLATFORM_FREEBSD
+-#pragma clang diagnostic push
+-#pragma clang diagnostic ignored "-Wenum-constexpr-conversion"
+-    case (CSessionProperties::GameDifficulty)-100:
+-#pragma clang diagnostic pop
+-#else
+-	case (CSessionProperties::GameDifficulty)-100:
+-#endif
++    case -100:
+       strHighScores[i+1][1] = "---";
+       continue;
+       break;
+diff --git a/SamTSE/Sources/SeriousSam/MenuGadgets.cpp b/SamTSE/Sources/SeriousSam/MenuGadgets.cpp
+index 8d8c1e6..a7c1a60 100644
+--- a/SamTSE/Sources/SeriousSam/MenuGadgets.cpp
++++ b/SamTSE/Sources/SeriousSam/MenuGadgets.cpp
+@@ -637,17 +637,12 @@ void CMGHighScore::Render( CDrawPort *pdp)
+   strHighScores[0][5] = TRANS("Score");
+ 
+   {for (INDEX i=0; i<HIGHSCORE_COUNT; i++) {
+-    switch(_pGame->gm_ahseHighScores[i].hse_gdDifficulty) {
++    const INDEX iDifficulty = (INDEX)_pGame->gm_ahseHighScores[i].hse_gdDifficulty;
++    switch(iDifficulty) {
+     default:
+       ASSERT(FALSE);
+-#ifdef PLATFORM_FREEBSD
+-#pragma clang diagnostic push
+-#pragma clang diagnostic ignored "-Wenum-constexpr-conversion"
+-    case (CSessionProperties::GameDifficulty)-100:
+-#pragma clang diagnostic pop
+-#else
+-	case (CSessionProperties::GameDifficulty)-100:
+-#endif
++    case -100:
+       strHighScores[i+1][1] = "---";
+       continue;
+       break;
