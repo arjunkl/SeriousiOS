@@ -193,10 +193,10 @@ def instrument_serioussam_startup(path: Path) -> int:
         ),
         (
             '''  // initialize engine
-#ifdef PLATFORM_UNIX''',
+#ifdef PLATFORM_IOS''',
             '''  // initialize engine
   SERIOUSIOS_STAGE("engine-init");
-#ifdef PLATFORM_UNIX''',
+#ifdef PLATFORM_IOS''',
         ),
         (
             '''#endif
