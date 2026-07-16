@@ -62,13 +62,13 @@ jobs:
           BISON_BIN: /opt/homebrew/opt/bison/bin/bison
         run: |
           set -euo pipefail
-          scripts/build_host_tools.sh upstream/SeriousSamClassic build/host-tools
+          bash scripts/build_host_tools.sh upstream/SeriousSamClassic build/host-tools
 
       - name: Generate representative TFE and TSE entities
         shell: bash
         run: |
           set -euo pipefail
-          scripts/smoke_generate_entities.sh \
+          bash scripts/smoke_generate_entities.sh \
             upstream/SeriousSamClassic \
             build/host-tools \
             build/generated-smoke
