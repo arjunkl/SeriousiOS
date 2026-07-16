@@ -8,14 +8,17 @@ extern "C" {
 
 typedef enum SeriousIOSEngineState {
     SeriousIOSEngineStateIdle = 0,
-    SeriousIOSEngineStateStarting = 1,
-    SeriousIOSEngineStateInitialized = 2,
-    SeriousIOSEngineStateFailed = 3,
-    SeriousIOSEngineStateStopped = 4,
+    SeriousIOSEngineStateCoreStarting = 1,
+    SeriousIOSEngineStateCoreInitialized = 2,
+    SeriousIOSEngineStateGameStarting = 3,
+    SeriousIOSEngineStateGameInitialized = 4,
+    SeriousIOSEngineStateFailed = 5,
+    SeriousIOSEngineStateStopped = 6,
 } SeriousIOSEngineState;
 
 bool SeriousIOS_StartCoreEngine(void);
-void SeriousIOS_StopCoreEngine(void);
+bool SeriousIOS_StartGameRuntime(const char* gameIdentifier);
+void SeriousIOS_StopEngine(void);
 SeriousIOSEngineState SeriousIOS_GetEngineState(void);
 const char* SeriousIOS_GetEngineStartupError(void);
 
