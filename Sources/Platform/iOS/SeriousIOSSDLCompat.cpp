@@ -16,11 +16,15 @@ namespace {
 const char* kSeriousIOSError =
     "SeriousiOS SDL compatibility service is not available in the current host";
 
+using PresentCallback = void (*)(void* context);
+
 std::atomic<int> gWindowWidth{0};
 std::atomic<int> gWindowHeight{0};
 std::atomic<int> gSwapInterval{0};
 std::atomic<int> gCursorState{SDL_ENABLE};
 std::atomic<int> gJoystickEventState{SDL_ENABLE};
+std::atomic<PresentCallback> gPresentCallback{nullptr};
+std::atomic<void*> gPresentContext{nullptr};
 Uint8 gKeyboardState[SDL_NUM_SCANCODES] = {};
 
 void writeZero(int* value) {
@@ -36,6 +40,11 @@ extern "C" {
 void SeriousIOS_SetSDLWindowSize(int width, int height) {
     gWindowWidth.store(width > 0 ? width : 0, std::memory_order_relaxed);
     gWindowHeight.store(height > 0 ? height : 0, std::memory_order_relaxed);
+}
+
+void SeriousIOS_SetPresentCallback(PresentCallback callback, void* context) {
+    gPresentContext.store(context, std::memory_order_release);
+    gPresentCallback.store(callback, std::memory_order_release);
 }
 
 const char* SDLCALL SDL_GetError(void) {
@@ -80,7 +89,11 @@ int SDLCALL SDL_GL_SetSwapInterval(int interval) {
 
 void SDLCALL SDL_GL_SwapWindow(SDL_Window* window) {
     (void)window;
-    // Presentation belongs to the EAGL-backed iOS render surface.
+    PresentCallback callback = gPresentCallback.load(std::memory_order_acquire);
+    void* context = gPresentContext.load(std::memory_order_acquire);
+    if (callback != nullptr) {
+        callback(context);
+    }
 }
 
 void SDLCALL SDL_GetWindowSize(SDL_Window* window, int* width, int* height) {
