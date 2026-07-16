@@ -28,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/apply_upstream_patches.sh
+          python3 -m py_compile scripts/transform_sources_for_ios.py
 
       - name: Checkout pinned SeriousSamClassic
         shell: bash
@@ -37,11 +38,13 @@ jobs:
           git -C upstream/SeriousSamClassic checkout --detach "$SERIOUSSAMCLASSIC_COMMIT"
           test "$(git -C upstream/SeriousSamClassic rev-parse HEAD)" = "$SERIOUSSAMCLASSIC_COMMIT"
 
-      - name: Apply SeriousiOS upstream patches
+      - name: Apply SeriousiOS source portability layer
         shell: bash
         run: |
           set -euo pipefail
           bash scripts/apply_upstream_patches.sh upstream/SeriousSamClassic
+          python3 scripts/transform_sources_for_ios.py upstream/SeriousSamClassic \
+            | tee upstream/SeriousSamClassic/seriousios-source-transform.txt
 
       - name: Compile engine platform probe for arm64 iPhoneOS
         shell: bash
@@ -56,6 +59,7 @@ jobs:
             echo "compiler=$($CXX --version | head -n 1)"
             echo "target=arm64-apple-ios15.0"
             cat upstream/SeriousSamClassic/seriousios-patches.manifest
+            cat upstream/SeriousSamClassic/seriousios-source-transform.txt
           } | tee artifacts/ios-platform-probe.txt
 
           overall_status=0
@@ -66,6 +70,7 @@ jobs:
               -target arm64-apple-ios15.0 \
               -isysroot "$SDK_PATH" \
               -std=c++14 \
+              -fms-extensions \
               -Wall -Wextra -Werror \
               -Wno-unused-parameter \
               -DUSE_PORTABLE_C=1 \
