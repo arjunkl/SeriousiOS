@@ -50,9 +50,22 @@ python3 "$REPOSITORY_ROOT/scripts/transform_ios_host_for_diagnostics.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
   --build-id "$BUILD_IDENTIFIER" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-diagnostic-host-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_game_data_import.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-game-data-import-transform.log"
 python3 "$REPOSITORY_ROOT/scripts/inject_ios_menu_touch.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-menu-touch-transform.log"
+
+grep -Fq '[self hasCompleteGameData]' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'Levels/01_Hatshepsut.wld' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'gro_copied=%lu levels_copied=%lu' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'Import original game data' "$DIAGNOSTIC_APP_SOURCE"
+if grep -Fq 'Import original .gro files' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still contains obsolete importer wording" >&2
+  exit 1
+fi
 
 common_compile=(
   -target arm64-apple-ios15.0
@@ -141,8 +154,12 @@ cat > "$APP_DIR/Info.plist" <<PLIST
   <string>1</string>
   <key>LSRequiresIPhoneOS</key>
   <true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <true/>
   <key>MinimumOSVersion</key>
   <string>15.0</string>
+  <key>UIFileSharingEnabled</key>
+  <true/>
   <key>UILaunchScreen</key>
   <dict/>
   <key>UIRequiresFullScreen</key>
@@ -157,6 +174,22 @@ cat > "$APP_DIR/Info.plist" <<PLIST
 PLIST
 
 plutil -lint "$APP_DIR/Info.plist" | tee "$EVIDENCE/${ENCOUNTER}-plist.txt"
+file_sharing=$(plutil -extract UIFileSharingEnabled raw -o - "$APP_DIR/Info.plist")
+open_in_place=$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$APP_DIR/Info.plist")
+if [[ "$file_sharing" != "true" || "$open_in_place" != "true" ]]; then
+  echo "generated Info.plist does not enable document sharing" >&2
+  exit 1
+fi
+{
+  echo "UIFileSharingEnabled=$file_sharing"
+  echo "LSSupportsOpeningDocumentsInPlace=$open_in_place"
+} | tee "$EVIDENCE/${ENCOUNTER}-file-sharing-plist.txt"
+
+if find "$APP_DIR" -type f \( -iname '*.gro' -o -iname '*.wld' \) -print -quit | grep -q .; then
+  echo "copyrighted game data entered the generated app bundle" >&2
+  exit 1
+fi
+
 file "$APP_DIR/$EXECUTABLE" | tee "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
 shasum -a 256 "$APP_DIR/$EXECUTABLE" | tee -a "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
 otool -L "$APP_DIR/$EXECUTABLE" > "$EVIDENCE/${ENCOUNTER}-uikit-linked-frameworks.txt"
@@ -167,3 +200,14 @@ bash "$REPOSITORY_ROOT/scripts/package_unsigned_ipa.sh" \
   "$ENCOUNTER" \
   "$APP_DIR" \
   "$EVIDENCE"
+
+IPA="$EVIDENCE/SeriousIOS-${ENCOUNTER}-unsigned.ipa"
+PACKAGED_PLIST="$OBJECT_DIR/Packaged-Info.plist"
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Info.plist" > "$PACKAGED_PLIST"
+plutil -lint "$PACKAGED_PLIST" >/dev/null
+test "$(plutil -extract UIFileSharingEnabled raw -o - "$PACKAGED_PLIST")" = "true"
+test "$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$PACKAGED_PLIST")" = "true"
+if unzip -Z1 "$IPA" | grep -Eiq '\.(gro|wld)$'; then
+  echo "copyrighted game data entered the packaged IPA" >&2
+  exit 1
+fi
