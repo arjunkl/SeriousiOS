@@ -20,8 +20,8 @@ TOUCH_METHODS = r'''- (void)routeMenuTouch:(UITouch*)touch activate:(BOOL)activa
     const CGPoint point = [touch locationInView:self];
     const CGFloat normalizedX = point.x / CGRectGetWidth(bounds);
     const CGFloat normalizedY = point.y / CGRectGetHeight(bounds);
-    const int pixelX = (int)llround(normalizedX * (CGFloat)(_drawableWidth - 1));
-    const int pixelY = (int)llround(normalizedY * (CGFloat)(_drawableHeight - 1));
+    const int pixelX = (int)(normalizedX * (CGFloat)(_drawableWidth - 1) + 0.5);
+    const int pixelY = (int)(normalizedY * (CGFloat)(_drawableHeight - 1) + 0.5);
 
     if (activate) {
         SeriousIOS_ApplicationMenuPointerActivate(pixelX, pixelY);
