@@ -10,6 +10,7 @@
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -144,6 +145,59 @@ void disableMainThreadStreamHandling() {
     SeriousIOS_DiagnosticsLog("stream", "main_thread_stream_handling=disabled");
 }
 
+const char* currentMenuName() {
+    if (pgmCurrentMenu == nullptr || pgmCurrentMenu->gm_strName == nullptr) {
+        return "unknown";
+    }
+    return pgmCurrentMenu->gm_strName;
+}
+
+bool routeMenuPointer(int pixelX, int pixelY, bool activate) {
+    if (!gApplicationInitialized
+        || gApplicationSuspended
+        || !gFirstFrameCompleted
+        || !bMenuActive) {
+        return false;
+    }
+
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSize(nullptr, &width, &height);
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    const PIX x = static_cast<PIX>(std::clamp(pixelX, 0, width - 1));
+    const PIX y = static_cast<PIX>(std::clamp(pixelY, 0, height - 1));
+
+    try {
+        MenuOnMouseMove(x, y);
+        if (activate) {
+            const char* menuBefore = currentMenuName();
+            SeriousIOS_DiagnosticsLog(
+                "input",
+                "menu_touch_activate x=%d y=%d menu_before=%s",
+                static_cast<int>(x),
+                static_cast<int>(y),
+                menuBefore);
+            MenuOnLMBDown();
+            SeriousIOS_DiagnosticsLog(
+                "input",
+                "menu_touch_result menu_active=%d menu_after=%s game_on=%d",
+                bMenuActive != FALSE,
+                currentMenuName(),
+                _pGame != nullptr && _pGame->gm_bGameOn != FALSE);
+            SeriousIOS_DiagnosticsWriteSummary("menu-touch-activation");
+        }
+    } catch (const char* error) {
+        return fail(error);
+    } catch (...) {
+        return fail("Serious Sam menu touch routing threw an unknown exception");
+    }
+
+    return true;
+}
+
 } // namespace
 
 extern "C" void SeriousIOS_ApplicationSetStage(const char* stage) {
@@ -273,6 +327,14 @@ extern "C" bool SeriousIOS_ApplicationFrame(void) {
         SeriousIOS_DiagnosticsWriteSummary("first-frame-complete");
     }
     return _bRunning != FALSE;
+}
+
+extern "C" bool SeriousIOS_ApplicationMenuPointerMove(int pixelX, int pixelY) {
+    return routeMenuPointer(pixelX, pixelY, false);
+}
+
+extern "C" bool SeriousIOS_ApplicationMenuPointerActivate(int pixelX, int pixelY) {
+    return routeMenuPointer(pixelX, pixelY, true);
 }
 
 extern "C" void SeriousIOS_ApplicationSuspend(void) {
