@@ -50,6 +50,9 @@ python3 "$REPOSITORY_ROOT/scripts/transform_ios_host_for_diagnostics.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
   --build-id "$BUILD_IDENTIFIER" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-diagnostic-host-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_menu_touch.py" \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-menu-touch-transform.log"
 
 common_compile=(
   -target arm64-apple-ios15.0
