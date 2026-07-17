@@ -210,6 +210,7 @@ STATUS_METHODS = r'''- (BOOL)fileExistsAndIsNonEmptyAtURL:(NSURL*)url {
             kEncounterName];
     }
 #else
+    (void)levelsFound;
     if (archivesFound) {
         _startupLabel.textColor = UIColor.systemGreenColor;
         _startupLabel.text = [NSString stringWithFormat:
