@@ -167,8 +167,10 @@ bool routeMenuPointer(int pixelX, int pixelY, bool activate) {
         return false;
     }
 
-    const PIX x = static_cast<PIX>(std::clamp(pixelX, 0, width - 1));
-    const PIX y = static_cast<PIX>(std::clamp(pixelY, 0, height - 1));
+    const int boundedX = std::max(0, std::min(pixelX, width - 1));
+    const int boundedY = std::max(0, std::min(pixelY, height - 1));
+    const PIX x = static_cast<PIX>(boundedX);
+    const PIX y = static_cast<PIX>(boundedY);
 
     try {
         MenuOnMouseMove(x, y);
