@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,6 +24,7 @@ const char* SeriousIOS_GetCachePath(void);
 const char* SeriousIOS_GetTemporaryPath(void);
 
 void SeriousIOS_SetSDLWindowSize(int width, int height);
+void SeriousIOS_SetSDLMouseState(int x, int y, uint32_t buttons);
 void SeriousIOS_SetPresentCallback(
     SeriousIOSPresentCallback callback,
     void* context);
