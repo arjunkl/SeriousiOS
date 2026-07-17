@@ -31,7 +31,7 @@ if(IOS)
     set_source_files_properties(
         "${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp"
         PROPERTIES COMPILE_DEFINITIONS
-            "SDL_GL_GetProcAddress=SeriousIOS_OriginalSDL_GL_GetProcAddress")
+            "SDL_GL_GetProcAddress=SeriousIOS_OriginalSDL_GL_GetProcAddress;SDL_GetMouseState=SeriousIOS_OriginalSDL_GetMouseState")
 endif()
 ''',
         f"{path}: platform root contract",
@@ -53,6 +53,7 @@ endif()
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSDiagnostics.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSEngineStartup.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLMouse.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLGLProcAddress.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLTextureCompat.cpp
