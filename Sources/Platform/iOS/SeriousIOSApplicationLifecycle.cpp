@@ -31,6 +31,9 @@ bool gApplicationSuspended = false;
 bool gApplicationStartupFailed = false;
 bool gFirstFrameCompleted = false;
 bool gStreamHandlingEnabled = false;
+bool gPendingMenuActivation = false;
+int gPendingMenuX = 0;
+int gPendingMenuY = 0;
 char gApplicationError[1024] = {};
 char gApplicationStage[256] = "idle";
 
@@ -169,35 +172,52 @@ bool routeMenuPointer(int pixelX, int pixelY, bool activate) {
 
     const int boundedX = std::max(0, std::min(pixelX, width - 1));
     const int boundedY = std::max(0, std::min(pixelY, height - 1));
-    const PIX x = static_cast<PIX>(boundedX);
-    const PIX y = static_cast<PIX>(boundedY);
+    SeriousIOS_SetSDLMouseState(boundedX, boundedY, 0);
+    MenuOnMouseMove(static_cast<PIX>(boundedX), static_cast<PIX>(boundedY));
 
-    try {
-        MenuOnMouseMove(x, y);
-        if (activate) {
-            const char* menuBefore = currentMenuName();
-            SeriousIOS_DiagnosticsLog(
-                "input",
-                "menu_touch_activate x=%d y=%d menu_before=%s",
-                static_cast<int>(x),
-                static_cast<int>(y),
-                menuBefore);
-            MenuOnLMBDown();
-            SeriousIOS_DiagnosticsLog(
-                "input",
-                "menu_touch_result menu_active=%d menu_after=%s game_on=%d",
-                bMenuActive != FALSE,
-                currentMenuName(),
-                _pGame != nullptr && _pGame->gm_bGameOn != FALSE);
-            SeriousIOS_DiagnosticsWriteSummary("menu-touch-activation");
-        }
-    } catch (const char* error) {
-        return fail(error);
-    } catch (...) {
-        return fail("Serious Sam menu touch routing threw an unknown exception");
+    if (activate) {
+        gPendingMenuX = boundedX;
+        gPendingMenuY = boundedY;
+        gPendingMenuActivation = true;
+        SeriousIOS_DiagnosticsLog(
+            "input",
+            "menu_touch_queued x=%d y=%d menu=%s",
+            boundedX,
+            boundedY,
+            currentMenuName());
+    }
+    return true;
+}
+
+void processPendingMenuActivation() {
+    if (!gPendingMenuActivation) {
+        return;
     }
 
-    return true;
+    gPendingMenuActivation = false;
+    if (!bMenuActive || pgmCurrentMenu == nullptr) {
+        SeriousIOS_DiagnosticsLog(
+            "input",
+            "menu_touch_dropped x=%d y=%d reason=menu_inactive",
+            gPendingMenuX,
+            gPendingMenuY);
+        return;
+    }
+
+    SeriousIOS_DiagnosticsLog(
+        "input",
+        "menu_touch_activate x=%d y=%d menu_before=%s",
+        gPendingMenuX,
+        gPendingMenuY,
+        currentMenuName());
+    MenuOnKeyDown(VK_LBUTTON);
+    SeriousIOS_DiagnosticsLog(
+        "input",
+        "menu_touch_result menu_active=%d menu_after=%s game_on=%d",
+        bMenuActive != FALSE,
+        currentMenuName(),
+        _pGame != nullptr && _pGame->gm_bGameOn != FALSE);
+    SeriousIOS_DiagnosticsWriteSummary("menu-touch-activation");
 }
 
 } // namespace
@@ -241,6 +261,7 @@ extern "C" bool SeriousIOS_ApplicationInitialize(void) {
 
     gApplicationError[0] = '\0';
     gFirstFrameCompleted = false;
+    gPendingMenuActivation = false;
     SeriousIOS_DiagnosticsLog("application", "initialize_requested");
     SeriousIOS_ApplicationSetStage("application-entry");
     if (!SeriousIOS_ArePathsConfigured()) {
@@ -315,10 +336,11 @@ extern "C" bool SeriousIOS_ApplicationFrame(void) {
         UpdateInputEnabledState();
         _pGame->gm_bMenuOn = bMenuActive;
         DoGame();
+        processPendingMenuActivation();
     } catch (const char* error) {
         return fail(error);
     } catch (...) {
-        return fail("Serious Sam application frame threw an unknown exception");
+        return fail("Serious Sam application frame or menu input threw an unknown exception");
     }
 
     SeriousIOS_DiagnosticsRecordFramePresented();
@@ -343,6 +365,7 @@ extern "C" void SeriousIOS_ApplicationSuspend(void) {
     if (!gApplicationInitialized || gApplicationSuspended) {
         return;
     }
+    gPendingMenuActivation = false;
     gApplicationSuspended = true;
     if (_pNetwork != nullptr) {
         _pNetwork->SetLocalPause(TRUE);
@@ -370,6 +393,7 @@ extern "C" void SeriousIOS_ApplicationShutdown(void) {
         return;
     }
 
+    gPendingMenuActivation = false;
     gApplicationSuspended = true;
     _bRunning = FALSE;
     SeriousIOS_ApplicationSetStage("shutdown-entry");
