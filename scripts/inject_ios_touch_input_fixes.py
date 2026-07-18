@@ -63,6 +63,31 @@ def transform_text(text: str) -> str:
     return text
 
 
+def normalize_generated_host_for_fire_transform(text: str) -> str:
+    # The generated Objective-C++ is semantically stable, but one alignment space
+    # differs from the transform fixture. Normalize only that declaration so the
+    # feature transform does not depend on cosmetic indentation.
+    actual = '''    UILabel* gyroLabel = [self controlsEditorLabelWithText:@"Gyro aiming"
+                                                       font:[UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold]];'''
+    normalized = '''    UILabel* gyroLabel = [self controlsEditorLabelWithText:@"Gyro aiming"
+                                                        font:[UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold]];'''
+    text = replace_once(text, actual, normalized, "gyro label formatting normalization")
+    return text
+
+
+def repair_normal_touch_finish_calls(text: str) -> str:
+    # The host has two ordinary touches-ended branches: one for the computer
+    # state and one for gameplay. The fire transform intentionally makes the
+    # finish method cancellation-aware; ensure every ordinary branch passes NO.
+    remaining = "[self endGameplayTouches:touches];"
+    replacement = "[self endGameplayTouches:touches cancelled:NO];"
+    if remaining in text:
+        text = text.replace(remaining, replacement)
+    if remaining in text:
+        raise RuntimeError("uncategorized touch-finish call remains")
+    return text
+
+
 def self_test() -> None:
     fixture = '''    button.exclusiveTouch = YES;
     const double accumulatedX = yawRate * deltaTime * pointsPerRadian + _gyroRemainderX;
@@ -95,7 +120,9 @@ def main() -> int:
     if not path.is_file():
         raise SystemExit(f"host source does not exist: {path}")
     text = transform_text(path.read_text(encoding="utf-8"))
+    text = normalize_generated_host_for_fire_transform(text)
     text = inject_ios_fire_gestures.transform_text(text)
+    text = repair_normal_touch_finish_calls(text)
     path.write_text(text, encoding="utf-8")
     print(f"Corrected gyro, simultaneous touches, and optional firing in {path}")
     return 0
