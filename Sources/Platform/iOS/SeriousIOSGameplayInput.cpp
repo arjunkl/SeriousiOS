@@ -17,6 +17,13 @@ extern "C" bool SeriousIOS_ApplicationGameplayControlsActive(void) {
         && bMenuActive == FALSE;
 }
 
+extern "C" bool SeriousIOS_ApplicationComputerActive(void) {
+    return SeriousIOS_ApplicationIsInitialized()
+        && _pGame != nullptr
+        && _pGame->gm_bGameOn != FALSE
+        && _pGame->gm_csComputerState != CS_OFF;
+}
+
 extern "C" void SeriousIOS_ApplicationProcessInputEvents(void) {
     if (!SeriousIOS_ApplicationIsInitialized() || _pGame == nullptr) {
         return;
@@ -26,6 +33,17 @@ extern "C" void SeriousIOS_ApplicationProcessInputEvents(void) {
     while (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE)) {
         const bool escapePressed =
             message.message == WM_KEYDOWN && message.wParam == VK_ESCAPE;
+
+        if (escapePressed && _pGame->gm_csComputerState != CS_OFF) {
+            const int previousState = static_cast<int>(_pGame->gm_csComputerState);
+            _pGame->ComputerForceOff();
+            SeriousIOS_ReleaseSDLInput();
+            SeriousIOS_DiagnosticsLog(
+                "input",
+                "gameplay_escape action=close_computer previous_state=%d",
+                previousState);
+            continue;
+        }
 
         if (escapePressed
             && (_gmRunningGameMode == GM_DEMO || _gmRunningGameMode == GM_INTRO)) {
