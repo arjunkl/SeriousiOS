@@ -51,6 +51,10 @@ def transform_text(text: str) -> str:
     _controlsEditorOverlay.userInteractionEnabled = NO;
 
     _touchOverlay = [[SeriousIOSTouchOverlayView alloc] initWithFrame:self.bounds];
+    // Preserve the exact relative-look resolution of the previously validated
+    // render-view path. A child UIView otherwise may operate at a lower content
+    // scale, causing touch and gyro deltas to be rounded into coarse steps.
+    _touchOverlay.contentScaleFactor = self.contentScaleFactor;
     _touchOverlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self addSubview:_touchOverlay];
 ''',
@@ -74,6 +78,7 @@ def transform_text(text: str) -> str:
     [self layoutGameplayControls];
     [self layoutControlsEditor];
     _touchOverlay.frame = self.bounds;
+    _touchOverlay.contentScaleFactor = self.contentScaleFactor;
     [self bringSubviewToFront:_touchOverlay];
 }''',
         "overlay layout",
@@ -102,6 +107,7 @@ def transform_text(text: str) -> str:
     required = (
         'SeriousIOSTouchOverlayView* _touchOverlay;',
         'initWithFrame:self.bounds',
+        '_touchOverlay.contentScaleFactor = self.contentScaleFactor;',
         'updateGameplayActive:gameplayActive computerActive:computerActive',
         'legacyButton.userInteractionEnabled = NO;',
         '[_motionManager stopDeviceMotionUpdates];',
@@ -109,6 +115,8 @@ def transform_text(text: str) -> str:
     for token in required:
         if token not in text:
             raise RuntimeError(f"eDuke overlay integration missing token: {token}")
+    if text.count('_touchOverlay.contentScaleFactor = self.contentScaleFactor;') != 2:
+        raise RuntimeError("overlay content scale must be copied at initialization and layout")
     return text
 
 
@@ -134,6 +142,7 @@ def self_test() -> None:
     assert 'SeriousIOSTouchOverlayView* _touchOverlay;' in transformed
     assert 'legacyButton.userInteractionEnabled = NO;' in transformed
     assert 'updateGameplayActive:gameplayActive computerActive:computerActive' in transformed
+    assert transformed.count('_touchOverlay.contentScaleFactor = self.contentScaleFactor;') == 2
     print('SeriousiOS eDuke overlay integration self-test passed')
 
 
