@@ -69,6 +69,10 @@ python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
   --self-test \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-netricsa-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_touch_customization.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-touch-customization-transform.log"
 
 grep -Fq '[self hasCompleteGameData]' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'Levels/01_Hatshepsut.wld' "$DIAGNOSTIC_APP_SOURCE"
@@ -76,11 +80,16 @@ grep -Fq 'gro_copied=%lu levels_copied=%lu' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'Import original game data' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS-diagnostics-report.txt' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'initWithActivityItems:@[reportURL]' "$DIAGNOSTIC_APP_SOURCE"
-grep -Fq 'computerActive ? @"EXIT" : @"PAUSE"' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS_ApplicationComputerActive()' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS_SetVirtualMovement((float)forward, (float)right)' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'radialDeadZone = 0.16' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SERIOUSIOS_ACTION_FIRE' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq '#import <CoreMotion/CoreMotion.h>' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'controls_editor_opened' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS.GyroSensitivity' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS.TouchAimSensitivity' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'pauseButtonLongPressed:' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'symbol:@"scope"' "$DIAGNOSTIC_APP_SOURCE"
 if grep -Eq "SeriousIOS_QueueSDLKey\('[wsad]'" "$DIAGNOSTIC_APP_SOURCE"; then
   echo "generated host still contains digital WASD movement" >&2
   exit 1
@@ -91,6 +100,10 @@ if grep -Fq 'initWithActivityItems:files' "$DIAGNOSTIC_APP_SOURCE"; then
 fi
 if grep -Fq 'Import original .gro files' "$DIAGNOSTIC_APP_SOURCE"; then
   echo "generated host still contains obsolete importer wording" >&2
+  exit 1
+fi
+if grep -Fq 'setTitle:(computerActive ? @"EXIT" : @"PAUSE")' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still contains text gameplay placeholders" >&2
   exit 1
 fi
 
@@ -185,6 +198,8 @@ cat > "$APP_DIR/Info.plist" <<PLIST
   <true/>
   <key>MinimumOSVersion</key>
   <string>15.0</string>
+  <key>NSMotionUsageDescription</key>
+  <string>SeriousiOS uses device motion only for optional gyro aiming.</string>
   <key>UIFileSharingEnabled</key>
   <true/>
   <key>UILaunchScreen</key>
@@ -203,14 +218,16 @@ PLIST
 plutil -lint "$APP_DIR/Info.plist" | tee "$EVIDENCE/${ENCOUNTER}-plist.txt"
 file_sharing=$(plutil -extract UIFileSharingEnabled raw -o - "$APP_DIR/Info.plist")
 open_in_place=$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$APP_DIR/Info.plist")
-if [[ "$file_sharing" != "true" || "$open_in_place" != "true" ]]; then
-  echo "generated Info.plist does not enable document sharing" >&2
+motion_usage=$(plutil -extract NSMotionUsageDescription raw -o - "$APP_DIR/Info.plist")
+if [[ "$file_sharing" != "true" || "$open_in_place" != "true" || -z "$motion_usage" ]]; then
+  echo "generated Info.plist does not expose documents and declare gyro usage" >&2
   exit 1
 fi
 {
   echo "UIFileSharingEnabled=$file_sharing"
   echo "LSSupportsOpeningDocumentsInPlace=$open_in_place"
-} | tee "$EVIDENCE/${ENCOUNTER}-file-sharing-plist.txt"
+  echo "NSMotionUsageDescription=$motion_usage"
+} | tee "$EVIDENCE/${ENCOUNTER}-file-sharing-and-motion-plist.txt"
 
 if find "$APP_DIR" -type f \( -iname '*.gro' -o -iname '*.wld' \) -print -quit | grep -q .; then
   echo "copyrighted game data entered the generated app bundle" >&2
@@ -232,6 +249,7 @@ unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Info.plist" > "$PACKAGED_PL
 plutil -lint "$PACKAGED_PLIST" >/dev/null
 test "$(plutil -extract UIFileSharingEnabled raw -o - "$PACKAGED_PLIST")" = "true"
 test "$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$PACKAGED_PLIST")" = "true"
+test -n "$(plutil -extract NSMotionUsageDescription raw -o - "$PACKAGED_PLIST")"
 if unzip -Z1 "$IPA" | grep -Eiq '\.(gro|wld)$'; then
   echo "copyrighted game data entered the packaged IPA" >&2
   exit 1
