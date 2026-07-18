@@ -61,6 +61,10 @@ python3 "$REPOSITORY_ROOT/scripts/inject_ios_game_data_import.py" \
 python3 "$REPOSITORY_ROOT/scripts/inject_ios_menu_touch.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-menu-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-netricsa-touch-transform.log"
 
 grep -Fq '[self hasCompleteGameData]' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'Levels/01_Hatshepsut.wld' "$DIAGNOSTIC_APP_SOURCE"
@@ -68,6 +72,8 @@ grep -Fq 'gro_copied=%lu levels_copied=%lu' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'Import original game data' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS-diagnostics-report.txt' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'initWithActivityItems:@[reportURL]' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'computerActive ? @"EXIT" : @"PAUSE"' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS_ApplicationComputerActive()' "$DIAGNOSTIC_APP_SOURCE"
 if grep -Fq 'initWithActivityItems:files' "$DIAGNOSTIC_APP_SOURCE"; then
   echo "generated host still contains multi-file diagnostic export" >&2
   exit 1
