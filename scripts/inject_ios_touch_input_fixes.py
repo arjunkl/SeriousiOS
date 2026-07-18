@@ -64,14 +64,22 @@ def transform_text(text: str) -> str:
 
 
 def normalize_generated_host_for_fire_transform(text: str) -> str:
-    # The generated Objective-C++ is semantically stable, but one alignment space
-    # differs from the transform fixture. Normalize only that declaration so the
-    # feature transform does not depend on cosmetic indentation.
-    actual = '''    UILabel* gyroLabel = [self controlsEditorLabelWithText:@"Gyro aiming"
+    # The generated Objective-C++ is semantically stable, but two alignment
+    # spaces differ from the transform fixture. Normalize only those declarations
+    # so behavior does not depend on cosmetic indentation.
+    actual_label = '''    UILabel* gyroLabel = [self controlsEditorLabelWithText:@"Gyro aiming"
                                                        font:[UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold]];'''
-    normalized = '''    UILabel* gyroLabel = [self controlsEditorLabelWithText:@"Gyro aiming"
+    normalized_label = '''    UILabel* gyroLabel = [self controlsEditorLabelWithText:@"Gyro aiming"
                                                         font:[UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold]];'''
-    text = replace_once(text, actual, normalized, "gyro label formatting normalization")
+    text = replace_once(
+        text, actual_label, normalized_label, "gyro label formatting normalization")
+
+    actual_lookup = '''    UIView* gyroLabelView = [self descendantViewWithAccessibilityIdentifier:@"gyro-enabled-label"
+                                                                      inView:_controlsEditorPanel];'''
+    normalized_lookup = '''    UIView* gyroLabelView = [self descendantViewWithAccessibilityIdentifier:@"gyro-enabled-label"
+                                                                       inView:_controlsEditorPanel];'''
+    text = replace_once(
+        text, actual_lookup, normalized_lookup, "gyro lookup formatting normalization")
     return text
 
 
