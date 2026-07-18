@@ -10,6 +10,7 @@
 #include <SeriousSam/SeriousSam.h>
 
 extern BOOL bMenuActive;
+extern CInGameMenu gmInGameMenu;
 
 namespace {
 
@@ -73,6 +74,14 @@ extern "C" bool SeriousIOS_ApplicationComputerActive(void) {
         && _pGame != nullptr
         && _pGame->gm_bGameOn != FALSE
         && _pGame->gm_csComputerState != CS_OFF;
+}
+
+extern "C" bool SeriousIOS_ApplicationPauseMenuActive(void) {
+    return SeriousIOS_ApplicationIsInitialized()
+        && _pGame != nullptr
+        && _pGame->gm_bGameOn != FALSE
+        && bMenuActive != FALSE
+        && pgmCurrentMenu == &gmInGameMenu;
 }
 
 extern "C" void SeriousIOS_ApplicationProcessInputEvents(void) {
