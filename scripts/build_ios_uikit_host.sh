@@ -73,6 +73,10 @@ python3 "$REPOSITORY_ROOT/scripts/inject_ios_touch_customization.py" \
   --self-test \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-touch-customization-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_touch_input_fixes.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-touch-input-fixes-transform.log"
 
 grep -Fq '[self hasCompleteGameData]' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'Levels/01_Hatshepsut.wld' "$DIAGNOSTIC_APP_SOURCE"
@@ -90,8 +94,16 @@ grep -Fq 'SeriousIOS.GyroSensitivity' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS.TouchAimSensitivity' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'pauseButtonLongPressed:' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'symbol:@"scope"' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'button.exclusiveTouch = NO;' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'const double accumulatedX = -yawRate * deltaTime' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'const double accumulatedY = -pitchRate * deltaTime' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'axis_sign=-1' "$DIAGNOSTIC_APP_SOURCE"
 if grep -Eq "SeriousIOS_QueueSDLKey\('[wsad]'" "$DIAGNOSTIC_APP_SOURCE"; then
   echo "generated host still contains digital WASD movement" >&2
+  exit 1
+fi
+if grep -Fq 'button.exclusiveTouch = YES;' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still prevents simultaneous gameplay touches" >&2
   exit 1
 fi
 if grep -Fq 'initWithActivityItems:files' "$DIAGNOSTIC_APP_SOURCE"; then
