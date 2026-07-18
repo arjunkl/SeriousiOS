@@ -93,13 +93,27 @@ extern "C" void SeriousIOS_ApplicationProcessInputEvents(void) {
 
         if (escapePressed && _pGame->gm_csComputerState != CS_OFF) {
             const int previousState = static_cast<int>(_pGame->gm_csComputerState);
-            _pGame->ComputerForceOff();
+            const int previousGameOn = _pGame->gm_bGameOn != FALSE ? 1 : 0;
+
+            // Follow Serious Sam's native computer exit path. ComputerKeyDown()
+            // invokes ExitRequested(), which clears the player's end-of-level
+            // flag and performs the ordinary fade/transition bookkeeping.
+            // ComputerForceOff() only hid NETRICSA and bypassed that campaign
+            // state transition, leaving a live frame loop on a black screen.
+            _pGame->ComputerKeyDown(message);
+
+            const int resultingState = static_cast<int>(_pGame->gm_csComputerState);
+            const int resultingGameOn = _pGame->gm_bGameOn != FALSE ? 1 : 0;
             SeriousIOS_ReleaseVirtualController();
             SeriousIOS_ReleaseSDLInput();
             SeriousIOS_DiagnosticsLog(
-                "input",
-                "gameplay_escape action=close_computer previous_state=%d",
-                previousState);
+                "transition",
+                "computer_exit native=1 previous_state=%d resulting_state=%d previous_game_on=%d resulting_game_on=%d running_mode=%d",
+                previousState,
+                resultingState,
+                previousGameOn,
+                resultingGameOn,
+                static_cast<int>(_gmRunningGameMode));
             continue;
         }
 
