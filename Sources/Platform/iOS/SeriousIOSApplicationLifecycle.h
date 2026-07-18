@@ -15,10 +15,13 @@ bool SeriousIOS_ApplicationIsInitialized(void);
 const char* SeriousIOS_ApplicationGetError(void);
 
 // Drain UIKit-produced SDL input events through Serious Sam's native event and
-// control paths before the next game frame. The visibility query is true only
-// while a game session is active and the native menu is closed.
+// control paths before the next game frame. Gameplay controls remain available
+// while a game session is active and the native pause menu is closed. The
+// computer query lets UIKit substitute a dedicated EXIT control while NETRICSA
+// is active instead of placing combat controls over the computer interface.
 void SeriousIOS_ApplicationProcessInputEvents(void);
 bool SeriousIOS_ApplicationGameplayControlsActive(void);
+bool SeriousIOS_ApplicationComputerActive(void);
 
 // Feed UIKit touch coordinates, already converted into native drawable pixels,
 // into Serious Sam's existing menu mouse path. Moving updates the highlighted
