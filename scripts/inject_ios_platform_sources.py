@@ -31,7 +31,7 @@ if(IOS)
     set_source_files_properties(
         "${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp"
         PROPERTIES COMPILE_DEFINITIONS
-            "SDL_GL_GetProcAddress=SeriousIOS_OriginalSDL_GL_GetProcAddress;SDL_GetMouseState=SeriousIOS_OriginalSDL_GetMouseState")
+            "SDL_GL_GetProcAddress=SeriousIOS_OriginalSDL_GL_GetProcAddress;SDL_GetMouseState=SeriousIOS_OriginalSDL_GetMouseState;SDL_GetKeyboardState=SeriousIOS_OriginalSDL_GetKeyboardState;SDL_GetScancodeFromKey=SeriousIOS_OriginalSDL_GetScancodeFromKey;SDL_GetRelativeMouseState=SeriousIOS_OriginalSDL_GetRelativeMouseState;SDL_PollEvent=SeriousIOS_OriginalSDL_PollEvent")
 endif()
 ''',
         f"{path}: platform root contract",
@@ -54,6 +54,7 @@ endif()
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSEngineStartup.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLMouse.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLInjectedInput.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLGLProcAddress.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLTextureCompat.cpp
@@ -68,6 +69,7 @@ endif()
         SeriousSam/Menu.cpp''',
         '''        ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSMainWindow.cpp
         ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSApplicationLifecycle.cpp
+        ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSGameplayInput.cpp
         SeriousSam/Menu.cpp''',
         f"{path}: application lifecycle injection",
     )
