@@ -8,7 +8,7 @@ from pathlib import Path
 
 import inject_ios_fire_gestures
 import inject_ios_pause_return
-import inject_ios_performance_profiler
+import inject_ios_performance_profiler_driver
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -122,7 +122,7 @@ def self_test() -> None:
     assert "axis_sign=-1" in transformed
     inject_ios_fire_gestures.self_test()
     inject_ios_pause_return.self_test()
-    inject_ios_performance_profiler.self_test()
+    inject_ios_performance_profiler_driver.self_test()
     print("SeriousiOS touch, optional-fire, pause-return, and profiler self-tests passed")
 
 
@@ -148,7 +148,7 @@ def main() -> int:
     text = inject_ios_fire_gestures.transform_text(text)
     text = repair_normal_touch_finish_calls(text)
     text = inject_ios_pause_return.transform_text(text)
-    text = inject_ios_performance_profiler.transform_text(text)
+    text = inject_ios_performance_profiler_driver.transform_text(text)
     path.write_text(text, encoding="utf-8")
     print(f"Corrected touch input and injected optional fire, pause UI, and profiling in {path}")
     return 0
