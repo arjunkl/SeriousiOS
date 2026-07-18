@@ -39,9 +39,12 @@ void* SeriousIOS_GetGLContext(void);
 int SeriousIOS_MakeGLContextCurrent(void);
 
 void* SeriousIOS_GetOpenGLCompatProcAddress(const char* procedure);
+void* SeriousIOS_GetOpenGLImmediateCompatProcAddress(const char* procedure);
 void* SeriousIOS_GetOpenGLTextureCompatProcAddress(const char* procedure);
 bool SeriousIOS_ValidateOpenGLCompatibility(void);
+bool SeriousIOS_ValidateOpenGLImmediateCompatibility(void);
 const char* SeriousIOS_GetOpenGLCompatibilityError(void);
+const char* SeriousIOS_GetOpenGLImmediateCompatibilityError(void);
 
 #ifdef __cplusplus
 } // extern "C"
