@@ -1,0 +1,30 @@
+diff --git a/SamTFE/Sources/SeriousSam/Menu.cpp b/SamTFE/Sources/SeriousSam/Menu.cpp
+index 0e5ba7a..28bb125 100644
+--- a/SamTFE/Sources/SeriousSam/Menu.cpp
++++ b/SamTFE/Sources/SeriousSam/Menu.cpp
+@@ -2718,6 +2718,10 @@ void SetMenuLerping(void)
+ // render mouse cursor if needed
+ void RenderMouseCursor(CDrawPort *pdp)
+ {
++#ifdef PLATFORM_IOS
++  (void)pdp;
++  return;
++#endif
+   // if mouse not used last
+   if (!_bMouseUsedLast|| _bDefiningKey || _bEditingString) {
+     // don't render cursor
+diff --git a/SamTSE/Sources/SeriousSam/Menu.cpp b/SamTSE/Sources/SeriousSam/Menu.cpp
+index d4410d2..f7fc97c 100644
+--- a/SamTSE/Sources/SeriousSam/Menu.cpp
++++ b/SamTSE/Sources/SeriousSam/Menu.cpp
+@@ -2725,6 +2725,10 @@ void SetMenuLerping(void)
+ // render mouse cursor if needed
+ void RenderMouseCursor(CDrawPort *pdp)
+ {
++#ifdef PLATFORM_IOS
++  (void)pdp;
++  return;
++#endif
+   // if mouse not used last
+   if (!_bMouseUsedLast|| _bDefiningKey || _bEditingString) {
+     // don't render cursor
