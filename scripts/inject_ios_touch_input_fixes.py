@@ -83,10 +83,21 @@ def normalize_generated_host_for_fire_transform(text: str) -> str:
     return text
 
 
+def prepare_computer_touch_finish_call(text: str) -> str:
+    # touchesEnded has separate computer and ordinary-gameplay branches. Mark the
+    # computer branch first so the fire transform sees exactly one ordinary call.
+    old = '''    if (SeriousIOS_ApplicationComputerActive()) {
+        [self endGameplayTouches:touches];
+        return;
+    }'''
+    new = '''    if (SeriousIOS_ApplicationComputerActive()) {
+        [self endGameplayTouches:touches cancelled:NO];
+        return;
+    }'''
+    return replace_once(text, old, new, "computer touch-finish branch")
+
+
 def repair_normal_touch_finish_calls(text: str) -> str:
-    # The host has two ordinary touches-ended branches: one for the computer
-    # state and one for gameplay. The fire transform intentionally makes the
-    # finish method cancellation-aware; ensure every ordinary branch passes NO.
     remaining = "[self endGameplayTouches:touches];"
     replacement = "[self endGameplayTouches:touches cancelled:NO];"
     if remaining in text:
@@ -129,6 +140,7 @@ def main() -> int:
         raise SystemExit(f"host source does not exist: {path}")
     text = transform_text(path.read_text(encoding="utf-8"))
     text = normalize_generated_host_for_fire_transform(text)
+    text = prepare_computer_touch_finish_call(text)
     text = inject_ios_fire_gestures.transform_text(text)
     text = repair_normal_touch_finish_calls(text)
     path.write_text(text, encoding="utf-8")
