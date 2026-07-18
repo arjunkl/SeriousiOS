@@ -52,6 +52,18 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/Payload"
 ditto "$APP_INPUT" "$STAGE/Payload/$APP_NAME"
 
+# ProMotion iPhones otherwise keep the application's display-link requests at
+# the system-default ceiling. This bundle key permits the adaptive 60-120 Hz
+# range requested by the generated UIKit host.
+PACKAGED_PLIST="$STAGE/Payload/$APP_NAME/Info.plist"
+/usr/libexec/PlistBuddy -c 'Delete :CADisableMinimumFrameDurationOnPhone' "$PACKAGED_PLIST" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Add :CADisableMinimumFrameDurationOnPhone bool true' "$PACKAGED_PLIST"
+plutil -lint "$PACKAGED_PLIST" >/dev/null
+if [[ "$(plutil -extract CADisableMinimumFrameDurationOnPhone raw -o - "$PACKAGED_PLIST")" != "true" ]]; then
+  echo "packaged app does not enable high-refresh display access" >&2
+  exit 1
+fi
+
 IPA="$OUTPUT_DIR/SeriousIOS-${ENCOUNTER}-unsigned.ipa"
 (
   cd "$STAGE"
@@ -68,6 +80,7 @@ app_name=$APP_NAME
 bundle_identifier=$BUNDLE_ID
 executable=$EXECUTABLE
 signed=false
+high_refresh_enabled=true
 ipa=$(basename "$IPA")
 EOF
 
