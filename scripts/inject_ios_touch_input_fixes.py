@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Correct gyro direction, enable simultaneous touches, then add optional fire gestures."""
+"""Correct gyro/touch behavior, add optional fire, then add pause-menu Return UI."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 import inject_ios_fire_gestures
+import inject_ios_pause_return
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -119,7 +120,8 @@ def self_test() -> None:
     assert "-pitchRate * deltaTime" in transformed
     assert "axis_sign=-1" in transformed
     inject_ios_fire_gestures.self_test()
-    print("SeriousiOS gyro, simultaneous-touch, and optional-fire self-tests passed")
+    inject_ios_pause_return.self_test()
+    print("SeriousiOS gyro, multitouch, optional-fire, and pause-return self-tests passed")
 
 
 def main() -> int:
@@ -143,8 +145,9 @@ def main() -> int:
     text = prepare_computer_touch_finish_call(text)
     text = inject_ios_fire_gestures.transform_text(text)
     text = repair_normal_touch_finish_calls(text)
+    text = inject_ios_pause_return.transform_text(text)
     path.write_text(text, encoding="utf-8")
-    print(f"Corrected gyro, simultaneous touches, and optional firing in {path}")
+    print(f"Corrected touch input, optional firing, and pause Return UI in {path}")
     return 0
 
 
