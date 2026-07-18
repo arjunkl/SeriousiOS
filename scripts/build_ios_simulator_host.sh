@@ -55,6 +55,13 @@ python3 "$REPOSITORY_ROOT/scripts/transform_ios_host_for_diagnostics.py" \
 python3 "$REPOSITORY_ROOT/scripts/inject_ios_menu_touch.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-menu-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-netricsa-touch-transform.log"
+
+grep -Fq 'computerActive ? @"EXIT" : @"PAUSE"' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS_ApplicationComputerActive()' "$DIAGNOSTIC_APP_SOURCE"
 
 common_compile=(
   -target "$TARGET"
