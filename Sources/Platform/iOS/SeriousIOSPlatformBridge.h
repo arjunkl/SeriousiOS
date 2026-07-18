@@ -10,6 +10,15 @@ extern "C" {
 typedef void (*SeriousIOSPresentCallback)(void* context);
 typedef int (*SeriousIOSMakeCurrentCallback)(void* context);
 
+typedef enum SeriousIOSVirtualAction {
+    SERIOUSIOS_ACTION_FIRE = 0,
+    SERIOUSIOS_ACTION_JUMP = 1,
+    SERIOUSIOS_ACTION_USE = 2,
+    SERIOUSIOS_ACTION_NEXT_WEAPON = 3,
+    SERIOUSIOS_ACTION_PREVIOUS_WEAPON = 4,
+    SERIOUSIOS_ACTION_COUNT = 5,
+} SeriousIOSVirtualAction;
+
 bool SeriousIOS_ConfigurePaths(
     const char* executablePath,
     const char* dataPath,
@@ -29,6 +38,11 @@ void SeriousIOS_QueueSDLKey(int keycode, bool pressed);
 void SeriousIOS_QueueSDLMouseButton(uint8_t button, bool pressed);
 void SeriousIOS_AddSDLRelativeMouseDelta(int deltaX, int deltaY);
 void SeriousIOS_ReleaseSDLInput(void);
+void SeriousIOS_SetVirtualMovement(float forward, float right);
+void SeriousIOS_SetVirtualAction(SeriousIOSVirtualAction action, bool pressed);
+void SeriousIOS_ReleaseVirtualController(void);
+float SeriousIOS_GetVirtualMovementForward(void);
+float SeriousIOS_GetVirtualMovementRight(void);
 void SeriousIOS_SetPresentCallback(
     SeriousIOSPresentCallback callback,
     void* context);
