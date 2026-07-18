@@ -13,11 +13,13 @@
 namespace {
 
 constexpr long long kMaximumLogBytes = 1024LL * 1024LL;
-constexpr unsigned long long kPeriodicFrameInterval = 600ULL;
+constexpr unsigned long long kPeriodicFrameInterval = 1200ULL;
 constexpr unsigned long long kDetailedTextureUploadLimit = 16ULL;
+constexpr unsigned long long kRepeatedErrorLogInterval = 256ULL;
 
 std::mutex gLogMutex;
 FILE* gLogFile = nullptr;
+char gLogBuffer[64 * 1024] = {};
 char gLogPath[2048] = {};
 char gEncounter[128] = "unknown";
 char gBuildIdentifier[128] = "unknown";
@@ -27,6 +29,7 @@ std::atomic<unsigned long long> gTextureUploads{0};
 std::atomic<unsigned long long> gNormalizedTextureUploads{0};
 std::atomic<unsigned long long> gTextureUploadErrors{0};
 std::atomic<unsigned long long> gTextureParameterNormalizations{0};
+std::atomic<unsigned long long> gTextureParameterErrors{0};
 std::atomic<unsigned long long> gSuspends{0};
 std::atomic<unsigned long long> gResumes{0};
 std::atomic<bool> gInitialized{false};
@@ -69,6 +72,18 @@ unsigned long long elapsedMilliseconds() {
     const auto elapsed = std::chrono::steady_clock::now() - gStartTime;
     return static_cast<unsigned long long>(
         std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+}
+
+bool categoryRequiresImmediateFlush(const char* category) {
+    if (category == nullptr) {
+        return false;
+    }
+    return std::strcmp(category, "session") == 0
+        || std::strcmp(category, "error") == 0
+        || std::strcmp(category, "fatal") == 0
+        || std::strcmp(category, "stage") == 0
+        || std::strcmp(category, "lifecycle") == 0
+        || std::strcmp(category, "checkpoint") == 0;
 }
 
 void writeLineLocked(const char* category, const char* message, bool flush) {
@@ -161,13 +176,14 @@ extern "C" bool SeriousIOS_DiagnosticsInitialize(
         gLogPath[0] = '\0';
         return false;
     }
-    std::setvbuf(gLogFile, nullptr, _IOLBF, 0);
+    std::setvbuf(gLogFile, gLogBuffer, _IOFBF, sizeof(gLogBuffer));
     gStartTime = std::chrono::steady_clock::now();
     gFramesPresented.store(0, std::memory_order_relaxed);
     gTextureUploads.store(0, std::memory_order_relaxed);
     gNormalizedTextureUploads.store(0, std::memory_order_relaxed);
     gTextureUploadErrors.store(0, std::memory_order_relaxed);
     gTextureParameterNormalizations.store(0, std::memory_order_relaxed);
+    gTextureParameterErrors.store(0, std::memory_order_relaxed);
     gSuspends.store(0, std::memory_order_relaxed);
     gResumes.store(0, std::memory_order_relaxed);
     gInitialized.store(true, std::memory_order_release);
@@ -209,7 +225,7 @@ extern "C" void SeriousIOS_DiagnosticsLog(
     ...) {
     va_list arguments;
     va_start(arguments, format);
-    logFormatted(category, true, format, arguments);
+    logFormatted(category, categoryRequiresImmediateFlush(category), format, arguments);
     va_end(arguments);
 }
 
@@ -242,15 +258,21 @@ extern "C" void SeriousIOS_DiagnosticsRecordTextureUpload(
     if (requestedInternalFormat != normalizedInternalFormat) {
         gNormalizedTextureUploads.fetch_add(1, std::memory_order_relaxed);
     }
+
+    unsigned long long errorCount = 0;
     if (error != 0) {
-        gTextureUploadErrors.fetch_add(1, std::memory_order_relaxed);
+        errorCount = gTextureUploadErrors.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
-    if (count <= kDetailedTextureUploadLimit || error != 0) {
+    const bool logRepeatedError = error != 0
+        && (errorCount <= kDetailedTextureUploadLimit
+            || (errorCount % kRepeatedErrorLogInterval) == 0);
+    if (count <= kDetailedTextureUploadLimit || logRepeatedError) {
         SeriousIOS_DiagnosticsLog(
             error == 0 ? "texture" : "gl-error",
-            "upload=%llu level=%d size=%dx%d requested_internal=0x%X normalized_internal=0x%X error=0x%X",
+            "upload=%llu error_count=%llu level=%d size=%dx%d requested_internal=0x%X normalized_internal=0x%X error=0x%X",
             count,
+            errorCount,
             level,
             width,
             height,
@@ -267,11 +289,21 @@ extern "C" void SeriousIOS_DiagnosticsRecordTextureParameterNormalization(
     uint32_t error) {
     const unsigned long long count =
         gTextureParameterNormalizations.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (count <= 16 || error != 0) {
+
+    unsigned long long errorCount = 0;
+    if (error != 0) {
+        errorCount = gTextureParameterErrors.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
+
+    const bool logRepeatedError = error != 0
+        && (errorCount <= kDetailedTextureUploadLimit
+            || (errorCount % kRepeatedErrorLogInterval) == 0);
+    if (count <= kDetailedTextureUploadLimit || logRepeatedError) {
         SeriousIOS_DiagnosticsLog(
             error == 0 ? "texture" : "gl-error",
-            "parameter_normalized=%llu parameter=0x%X requested=0x%X normalized=0x%X error=0x%X",
+            "parameter_normalized=%llu error_count=%llu parameter=0x%X requested=0x%X normalized=0x%X error=0x%X",
             count,
+            errorCount,
             parameter,
             requestedValue,
             normalizedValue,
@@ -293,13 +325,14 @@ extern "C" void SeriousIOS_DiagnosticsRecordResume(void) {
 extern "C" void SeriousIOS_DiagnosticsWriteSummary(const char* reason) {
     SeriousIOS_DiagnosticsLog(
         "summary",
-        "reason=%s frames=%llu texture_uploads=%llu normalized_uploads=%llu texture_errors=%llu parameter_normalizations=%llu suspends=%llu resumes=%llu",
+        "reason=%s frames=%llu texture_uploads=%llu normalized_uploads=%llu texture_errors=%llu parameter_normalizations=%llu parameter_errors=%llu suspends=%llu resumes=%llu",
         reason == nullptr ? "unspecified" : reason,
         gFramesPresented.load(std::memory_order_relaxed),
         gTextureUploads.load(std::memory_order_relaxed),
         gNormalizedTextureUploads.load(std::memory_order_relaxed),
         gTextureUploadErrors.load(std::memory_order_relaxed),
         gTextureParameterNormalizations.load(std::memory_order_relaxed),
+        gTextureParameterErrors.load(std::memory_order_relaxed),
         gSuspends.load(std::memory_order_relaxed),
         gResumes.load(std::memory_order_relaxed));
 }
