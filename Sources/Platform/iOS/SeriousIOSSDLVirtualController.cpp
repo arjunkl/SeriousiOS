@@ -41,15 +41,8 @@ void routeAction(SeriousIOSVirtualAction action, bool pressed) {
         case SERIOUSIOS_ACTION_USE:
             SeriousIOS_QueueSDLKey(SDLK_RETURN, pressed);
             break;
-        case SERIOUSIOS_ACTION_CROUCH:
-            SeriousIOS_QueueSDLKey(SDLK_f, pressed);
-            break;
         case SERIOUSIOS_ACTION_NEXT_WEAPON:
-            SeriousIOS_QueueSDLKey(SDLK_RIGHTBRACKET, pressed);
-            break;
         case SERIOUSIOS_ACTION_PREVIOUS_WEAPON:
-            SeriousIOS_QueueSDLKey(SDLK_LEFTBRACKET, pressed);
-            break;
         case SERIOUSIOS_ACTION_COUNT:
             break;
     }
