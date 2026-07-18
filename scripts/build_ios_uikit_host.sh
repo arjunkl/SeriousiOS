@@ -61,6 +61,10 @@ python3 "$REPOSITORY_ROOT/scripts/inject_ios_game_data_import.py" \
 python3 "$REPOSITORY_ROOT/scripts/inject_ios_menu_touch.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-menu-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_analog_touch.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-analog-touch-transform.log"
 python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
   --self-test \
   "$DIAGNOSTIC_APP_SOURCE" \
@@ -74,6 +78,13 @@ grep -Fq 'SeriousIOS-diagnostics-report.txt' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'initWithActivityItems:@[reportURL]' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'computerActive ? @"EXIT" : @"PAUSE"' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS_ApplicationComputerActive()' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS_SetVirtualMovement((float)forward, (float)right)' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'radialDeadZone = 0.16' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SERIOUSIOS_ACTION_FIRE' "$DIAGNOSTIC_APP_SOURCE"
+if grep -Eq "SeriousIOS_QueueSDLKey\('[wsad]'" "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still contains digital WASD movement" >&2
+  exit 1
+fi
 if grep -Fq 'initWithActivityItems:files' "$DIAGNOSTIC_APP_SOURCE"; then
   echo "generated host still contains multi-file diagnostic export" >&2
   exit 1
@@ -210,8 +221,6 @@ file "$APP_DIR/$EXECUTABLE" | tee "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
 shasum -a 256 "$APP_DIR/$EXECUTABLE" | tee -a "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
 otool -L "$APP_DIR/$EXECUTABLE" > "$EVIDENCE/${ENCOUNTER}-uikit-linked-frameworks.txt"
 
-# Produce an unsigned IPA container suitable for downstream signing by AltStore,
-# Xcode, or another user-controlled signing tool. No copyrighted data is bundled.
 bash "$REPOSITORY_ROOT/scripts/package_unsigned_ipa.sh" \
   "$ENCOUNTER" \
   "$APP_DIR" \
