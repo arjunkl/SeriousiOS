@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Correct gyro direction and allow simultaneous gameplay touch actions."""
+"""Correct gyro direction, enable simultaneous touches, then add optional fire gestures."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
+
+import inject_ios_fire_gestures
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -72,7 +74,8 @@ def self_test() -> None:
     assert "-yawRate * deltaTime" in transformed
     assert "-pitchRate * deltaTime" in transformed
     assert "axis_sign=-1" in transformed
-    print("SeriousiOS gyro-direction and simultaneous-touch self-test passed")
+    inject_ios_fire_gestures.self_test()
+    print("SeriousiOS gyro, simultaneous-touch, and optional-fire self-tests passed")
 
 
 def main() -> int:
@@ -91,8 +94,10 @@ def main() -> int:
     path = args.host_source.resolve()
     if not path.is_file():
         raise SystemExit(f"host source does not exist: {path}")
-    path.write_text(transform_text(path.read_text(encoding="utf-8")), encoding="utf-8")
-    print(f"Corrected gyro direction and enabled simultaneous touch actions in {path}")
+    text = transform_text(path.read_text(encoding="utf-8"))
+    text = inject_ios_fire_gestures.transform_text(text)
+    path.write_text(text, encoding="utf-8")
+    print(f"Corrected gyro, simultaneous touches, and optional firing in {path}")
     return 0
 
 
