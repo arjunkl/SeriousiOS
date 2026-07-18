@@ -13,6 +13,10 @@ extern "C" void* SDLCALL SDL_GL_GetProcAddress(const char* procedure) {
             SeriousIOS_GetOpenGLTextureCompatProcAddress(procedure)) {
         return textureProcedure;
     }
+    if (void* immediateProcedure =
+            SeriousIOS_GetOpenGLImmediateCompatProcAddress(procedure)) {
+        return immediateProcedure;
+    }
     if (void* compatibilityProcedure =
             SeriousIOS_GetOpenGLCompatProcAddress(procedure)) {
         return compatibilityProcedure;
