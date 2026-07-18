@@ -55,6 +55,10 @@ python3 "$REPOSITORY_ROOT/scripts/transform_ios_host_for_diagnostics.py" \
 python3 "$REPOSITORY_ROOT/scripts/inject_ios_menu_touch.py" \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-menu-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_analog_touch.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-analog-touch-transform.log"
 python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
   --self-test \
   "$DIAGNOSTIC_APP_SOURCE" \
@@ -62,6 +66,12 @@ python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
 
 grep -Fq 'computerActive ? @"EXIT" : @"PAUSE"' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS_ApplicationComputerActive()' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS_SetVirtualMovement((float)forward, (float)right)' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'radialDeadZone = 0.16' "$DIAGNOSTIC_APP_SOURCE"
+if grep -Eq "SeriousIOS_QueueSDLKey\('[wsad]'" "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated simulator host still contains digital WASD movement" >&2
+  exit 1
+fi
 
 common_compile=(
   -target "$TARGET"
