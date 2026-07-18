@@ -25,10 +25,12 @@ public:
     void setAction(std::size_t action, bool pressed) noexcept;
     void pulseAction(std::size_t action) noexcept;
     void releaseAll() noexcept;
+    [[nodiscard]] InputSnapshot snapshot() noexcept;
     [[nodiscard]] InputSnapshot consume() noexcept;
 
 private:
     static float clampAxis(float value) noexcept;
+    InputSnapshot snapshotLocked() const noexcept;
 
     std::mutex mutex_;
     float moveForward_ = 0.0f;
