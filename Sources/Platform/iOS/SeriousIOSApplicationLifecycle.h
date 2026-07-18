@@ -23,6 +23,11 @@ void SeriousIOS_ApplicationProcessInputEvents(void);
 bool SeriousIOS_ApplicationGameplayControlsActive(void);
 bool SeriousIOS_ApplicationComputerActive(void);
 
+// True only while the active native menu is Serious Sam's in-game pause menu.
+// UIKit may use this narrow query to expose a larger Return to Game control
+// without recreating, replacing, or hard-coding the engine menu itself.
+bool SeriousIOS_ApplicationPauseMenuActive(void);
+
 // Feed UIKit touch coordinates, already converted into native drawable pixels,
 // into Serious Sam's existing menu mouse path. Moving updates the highlighted
 // gadget; activating performs the ordinary left-button action on that gadget.
