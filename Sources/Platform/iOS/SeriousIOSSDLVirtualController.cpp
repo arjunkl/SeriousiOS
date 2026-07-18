@@ -138,8 +138,9 @@ extern "C" Sint16 SDLCALL SDL_JoystickGetAxis(
             // Serious Engine negates AXIS_MOVE_LR when creating the player action.
             return axisValue(-state.moveRight);
         case 1:
-            // Serious Engine negates AXIS_MOVE_FB when creating the player action.
-            return axisValue(-state.moveForward);
+            // Positive touch-forward must reach the engine as the opposite raw axis
+            // sign from strafe because AXIS_MOVE_FB has its own movement convention.
+            return axisValue(state.moveForward);
         default:
             return 0;
     }
