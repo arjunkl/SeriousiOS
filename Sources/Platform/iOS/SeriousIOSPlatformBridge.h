@@ -25,6 +25,10 @@ const char* SeriousIOS_GetTemporaryPath(void);
 
 void SeriousIOS_SetSDLWindowSize(int width, int height);
 void SeriousIOS_SetSDLMouseState(int x, int y, uint32_t buttons);
+void SeriousIOS_QueueSDLKey(int keycode, bool pressed);
+void SeriousIOS_QueueSDLMouseButton(uint8_t button, bool pressed);
+void SeriousIOS_AddSDLRelativeMouseDelta(int deltaX, int deltaY);
+void SeriousIOS_ReleaseSDLInput(void);
 void SeriousIOS_SetPresentCallback(
     SeriousIOSPresentCallback callback,
     void* context);
