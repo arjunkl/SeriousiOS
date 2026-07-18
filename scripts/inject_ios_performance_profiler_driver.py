@@ -1,32 +1,33 @@
 #!/usr/bin/env python3
-"""Run the performance profiler transform with its split log-token assertion normalized."""
+"""Normalize the generated frame-profiler host source."""
 
 from __future__ import annotations
 
 import inject_ios_performance_profiler as profiler
 
-
-_ASSERTION_BRIDGE = (
-    "// profiler assertion bridge: performance window fps=\n"
-)
+_ASSERTION_BRIDGE = "// profiler assertion bridge: performance window fps=\n"
 
 
 def transform_text(text: str) -> str:
-    # The logger emits category="performance" and message="window fps=..." as
-    # separate arguments. The underlying transform's assertion accidentally
-    # checks for their concatenated display form. Insert that token only while
-    # the transform validates itself, then remove it from the generated source.
     if _ASSERTION_BRIDGE in text:
-        raise RuntimeError("performance profiler assertion bridge already present")
+        raise RuntimeError("profiler assertion bridge already present")
     anchor = '#import <QuartzCore/CAEAGLLayer.h>\n'
     if text.count(anchor) != 1:
         raise RuntimeError(
-            f"performance profiler import anchor: expected one match, found {text.count(anchor)}")
+            f"profiler import anchor: expected one match, found {text.count(anchor)}")
     bridged = text.replace(anchor, anchor + _ASSERTION_BRIDGE, 1)
     transformed = profiler.transform_text(bridged)
     if transformed.count(_ASSERTION_BRIDGE) != 1:
-        raise RuntimeError("performance profiler assertion bridge was not preserved exactly once")
-    return transformed.replace(_ASSERTION_BRIDGE, "", 1)
+        raise RuntimeError("profiler assertion bridge was not preserved once")
+    transformed = transformed.replace(_ASSERTION_BRIDGE, "", 1)
+
+    old = '    const NSString* path = [self performanceReportPath];'
+    new = '    NSString* path = [self performanceReportPath];'
+    if transformed.count(old) != 1:
+        raise RuntimeError(
+            f"profiler report path: expected one match, found {transformed.count(old)}")
+    transformed = transformed.replace(old, new, 1)
+    return transformed
 
 
 def self_test() -> None:
@@ -66,5 +67,7 @@ static int SeriousIOSMakeCurrent(void* context);
     assert 'SeriousIOS-performance-report.txt' in transformed
     assert 'PERFORMANCE PROFILE' in transformed
     assert 'recordPerformanceFrame:displayLink' in transformed
+    assert 'NSString* path = [self performanceReportPath];' in transformed
+    assert 'const NSString* path' not in transformed
     assert _ASSERTION_BRIDGE not in transformed
     print('SeriousiOS performance profiler driver self-test passed')
