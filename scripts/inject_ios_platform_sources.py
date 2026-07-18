@@ -31,7 +31,7 @@ if(IOS)
     set_source_files_properties(
         "${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp"
         PROPERTIES COMPILE_DEFINITIONS
-            "SDL_GL_GetProcAddress=SeriousIOS_OriginalSDL_GL_GetProcAddress;SDL_GetMouseState=SeriousIOS_OriginalSDL_GetMouseState;SDL_GetKeyboardState=SeriousIOS_OriginalSDL_GetKeyboardState;SDL_GetScancodeFromKey=SeriousIOS_OriginalSDL_GetScancodeFromKey;SDL_GetRelativeMouseState=SeriousIOS_OriginalSDL_GetRelativeMouseState;SDL_PollEvent=SeriousIOS_OriginalSDL_PollEvent")
+            "SDL_GL_GetProcAddress=SeriousIOS_OriginalSDL_GL_GetProcAddress;SDL_GetMouseState=SeriousIOS_OriginalSDL_GetMouseState;SDL_GetKeyboardState=SeriousIOS_OriginalSDL_GetKeyboardState;SDL_GetScancodeFromKey=SeriousIOS_OriginalSDL_GetScancodeFromKey;SDL_GetRelativeMouseState=SeriousIOS_OriginalSDL_GetRelativeMouseState;SDL_PollEvent=SeriousIOS_OriginalSDL_PollEvent;SDL_NumJoysticks=SeriousIOS_OriginalSDL_NumJoysticks;SDL_JoystickNameForIndex=SeriousIOS_OriginalSDL_JoystickNameForIndex;SDL_JoystickOpen=SeriousIOS_OriginalSDL_JoystickOpen;SDL_JoystickClose=SeriousIOS_OriginalSDL_JoystickClose;SDL_JoystickNumAxes=SeriousIOS_OriginalSDL_JoystickNumAxes;SDL_JoystickNumButtons=SeriousIOS_OriginalSDL_JoystickNumButtons;SDL_JoystickNumHats=SeriousIOS_OriginalSDL_JoystickNumHats;SDL_JoystickInstanceID=SeriousIOS_OriginalSDL_JoystickInstanceID;SDL_JoystickGetAxis=SeriousIOS_OriginalSDL_JoystickGetAxis;SDL_JoystickGetButton=SeriousIOS_OriginalSDL_JoystickGetButton")
 endif()
 ''',
         f"{path}: platform root contract",
@@ -52,9 +52,11 @@ endif()
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSPlatformState.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSDiagnostics.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSEngineStartup.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSInputBridge.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLMouse.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLInjectedInput.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLVirtualController.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLGLProcAddress.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLImmediateCompat.cpp
