@@ -51,21 +51,29 @@ void InputBridge::releaseAll() noexcept {
     pressedActions_.fill(false);
 }
 
+InputSnapshot InputBridge::snapshotLocked() const noexcept {
+    InputSnapshot result;
+    result.moveForward = moveForward_;
+    result.moveRight = moveRight_;
+    result.lookYawDelta = lookYawDelta_;
+    result.lookPitchDelta = lookPitchDelta_;
+    result.heldActions = heldActions_;
+    result.pressedActions = pressedActions_;
+    return result;
+}
+
+InputSnapshot InputBridge::snapshot() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return snapshotLocked();
+}
+
 InputSnapshot InputBridge::consume() noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
-
-    InputSnapshot snapshot;
-    snapshot.moveForward = moveForward_;
-    snapshot.moveRight = moveRight_;
-    snapshot.lookYawDelta = lookYawDelta_;
-    snapshot.lookPitchDelta = lookPitchDelta_;
-    snapshot.heldActions = heldActions_;
-    snapshot.pressedActions = pressedActions_;
-
+    InputSnapshot result = snapshotLocked();
     lookYawDelta_ = 0.0f;
     lookPitchDelta_ = 0.0f;
     pressedActions_.fill(false);
-    return snapshot;
+    return result;
 }
 
 } // namespace seriousios
