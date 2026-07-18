@@ -63,13 +63,26 @@ python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
   --self-test \
   "$DIAGNOSTIC_APP_SOURCE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-netricsa-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_touch_customization.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-touch-customization-transform.log"
 
-grep -Fq 'computerActive ? @"EXIT" : @"PAUSE"' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS_ApplicationComputerActive()' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'SeriousIOS_SetVirtualMovement((float)forward, (float)right)' "$DIAGNOSTIC_APP_SOURCE"
 grep -Fq 'radialDeadZone = 0.16' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq '#import <CoreMotion/CoreMotion.h>' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'controls_editor_opened' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS.GyroSensitivity' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS.TouchAimSensitivity' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'pauseButtonLongPressed:' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'symbol:@"scope"' "$DIAGNOSTIC_APP_SOURCE"
 if grep -Eq "SeriousIOS_QueueSDLKey\('[wsad]'" "$DIAGNOSTIC_APP_SOURCE"; then
   echo "generated simulator host still contains digital WASD movement" >&2
+  exit 1
+fi
+if grep -Fq 'setTitle:(computerActive ? @"EXIT" : @"PAUSE")' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated simulator host still contains text gameplay placeholders" >&2
   exit 1
 fi
 
@@ -168,6 +181,8 @@ cat > "$APP_DIR/Info.plist" <<PLIST
   <string>iphonesimulator${SDK_VERSION}</string>
   <key>MinimumOSVersion</key>
   <string>15.0</string>
+  <key>NSMotionUsageDescription</key>
+  <string>SeriousiOS uses device motion only for optional gyro aiming.</string>
   <key>UILaunchScreen</key>
   <dict/>
   <key>UIRequiresFullScreen</key>
@@ -182,6 +197,7 @@ cat > "$APP_DIR/Info.plist" <<PLIST
 PLIST
 
 plutil -lint "$APP_DIR/Info.plist" | tee "$EVIDENCE/${ENCOUNTER}-simulator-plist.txt"
+test -n "$(plutil -extract NSMotionUsageDescription raw -o - "$APP_DIR/Info.plist")"
 codesign --force --sign - "$APP_DIR"
 file "$APP_DIR/$EXECUTABLE" | tee "$EVIDENCE/${ENCOUNTER}-simulator-product.txt"
 shasum -a 256 "$APP_DIR/$EXECUTABLE" | tee -a "$EVIDENCE/${ENCOUNTER}-simulator-product.txt"
