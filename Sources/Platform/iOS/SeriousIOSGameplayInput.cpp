@@ -2,13 +2,13 @@
 #include "SeriousIOSDiagnostics.h"
 #include "SeriousIOSPlatformBridge.h"
 
+#include <Engine/Engine.h>
 #include <Engine/Base/SDL/SDLEvents.h>
 #include <GameMP/Game.h>
 #include <SeriousSam/Menu.h>
 #include <SeriousSam/SeriousSam.h>
 
 extern BOOL bMenuActive;
-extern BOOL bMenuRendering;
 
 extern "C" bool SeriousIOS_ApplicationGameplayControlsActive(void) {
     return SeriousIOS_ApplicationIsInitialized()
@@ -64,6 +64,4 @@ extern "C" void SeriousIOS_ApplicationProcessInputEvents(void) {
             }
         }
     }
-
-    bMenuRendering = bMenuActive;
 }
