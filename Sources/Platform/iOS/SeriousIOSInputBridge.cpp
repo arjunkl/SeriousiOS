@@ -1,11 +1,15 @@
 #include "SeriousIOSInputBridge.h"
 
-#include <algorithm>
-
 namespace seriousios {
 
 float InputBridge::clampAxis(float value) noexcept {
-    return std::clamp(value, -1.0f, 1.0f);
+    if (value < -1.0f) {
+        return -1.0f;
+    }
+    if (value > 1.0f) {
+        return 1.0f;
+    }
+    return value;
 }
 
 void InputBridge::setMovement(float forward, float right) noexcept {
