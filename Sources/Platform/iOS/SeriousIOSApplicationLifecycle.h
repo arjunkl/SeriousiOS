@@ -14,6 +14,12 @@ void SeriousIOS_ApplicationShutdown(void);
 bool SeriousIOS_ApplicationIsInitialized(void);
 const char* SeriousIOS_ApplicationGetError(void);
 
+// Drain UIKit-produced SDL input events through Serious Sam's native event and
+// control paths before the next game frame. The visibility query is true only
+// while a game session is active and the native menu is closed.
+void SeriousIOS_ApplicationProcessInputEvents(void);
+bool SeriousIOS_ApplicationGameplayControlsActive(void);
+
 // Feed UIKit touch coordinates, already converted into native drawable pixels,
 // into Serious Sam's existing menu mouse path. Moving updates the highlighted
 // gadget; activating performs the ordinary left-button action on that gadget.
