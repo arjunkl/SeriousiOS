@@ -57,6 +57,7 @@ endif()
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLInjectedInput.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSSDLGLProcAddress.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLCompat.cpp
+    ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLImmediateCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLTextureCompat.cpp
     ${SERIOUSIOS_PLATFORM_ROOT}/SeriousIOSOpenGLExports.cpp
 ''',
