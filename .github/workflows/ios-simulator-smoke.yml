@@ -1,0 +1,241 @@
+name: SeriousiOS Simulator Startup Smoke
+
+on:
+  push:
+    branches:
+      - main
+      - agent/**
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: seriousios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator-core-startup:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Checkout SeriousiOS
+        uses: actions/checkout@v4
+
+      - name: Load pinned revisions
+        shell: bash
+        run: cat Dependencies.lock >> "$GITHUB_ENV"
+
+      - name: Validate simulator tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/build_host_tools.sh
+          bash -n scripts/generate_all_sources.sh
+          bash -n scripts/apply_upstream_patches.sh
+          bash -n scripts/build_ios_runtime_archives.sh
+          bash -n scripts/build_ios_simulator_host.sh
+          bash -n scripts/run_ios_simulator_smoke.sh
+          python3 -m py_compile scripts/generate_static_entity_registry.py
+          python3 -m py_compile scripts/generate_static_runtime_registry.py
+          python3 -m py_compile scripts/transform_sources_for_ios.py
+          python3 -m py_compile scripts/transform_cmake_for_ios.py
+          python3 -m py_compile scripts/inject_ios_platform_sources.py
+
+      - name: Install generator dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install bison flex
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+
+      - name: Checkout pinned SeriousSamClassic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "$SERIOUSSAMCLASSIC_REPOSITORY" upstream/SeriousSamClassic
+          git -C upstream/SeriousSamClassic checkout --detach "$SERIOUSSAMCLASSIC_COMMIT"
+          test "$(git -C upstream/SeriousSamClassic rev-parse HEAD)" = "$SERIOUSSAMCLASSIC_COMMIT"
+
+      - name: Build native Entity Class Compilers
+        shell: bash
+        env:
+          FLEX_BIN: /opt/homebrew/opt/flex/bin/flex
+          BISON_BIN: /opt/homebrew/opt/bison/bin/bison
+        run: |
+          set -euo pipefail
+          bash scripts/build_host_tools.sh upstream/SeriousSamClassic build/simulator/host-tools
+
+      - name: Generate complete TFE and TSE source corpus
+        shell: bash
+        env:
+          FLEX_BIN: /opt/homebrew/opt/flex/bin/flex
+          BISON_BIN: /opt/homebrew/opt/bison/bin/bison
+        run: |
+          set -euo pipefail
+          bash scripts/generate_all_sources.sh \
+            upstream/SeriousSamClassic \
+            build/simulator/host-tools \
+            build/simulator/generated-all
+
+      - name: Generate simulator runtime registries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/simulator/static-registries
+          python3 scripts/generate_static_entity_registry.py \
+            build/simulator/generated-all/TFE \
+            TFE \
+            build/simulator/static-registries/SeriousIOSTFEEntityRegistry.cpp \
+            --upstream upstream/SeriousSamClassic \
+            --manifest build/simulator/static-registries/TFE-entities.json
+          python3 scripts/generate_static_entity_registry.py \
+            build/simulator/generated-all/TSE \
+            TSE \
+            build/simulator/static-registries/SeriousIOSTSEEntityRegistry.cpp \
+            --upstream upstream/SeriousSamClassic \
+            --manifest build/simulator/static-registries/TSE-entities.json
+          python3 scripts/generate_static_runtime_registry.py \
+            upstream/SeriousSamClassic \
+            TFE \
+            build/simulator/static-registries/SeriousIOSTFERuntimeRegistry.cpp \
+            --manifest build/simulator/static-registries/TFE-runtime.json
+          python3 scripts/generate_static_runtime_registry.py \
+            upstream/SeriousSamClassic \
+            TSE \
+            build/simulator/static-registries/SeriousIOSTSERuntimeRegistry.cpp \
+            --manifest build/simulator/static-registries/TSE-runtime.json
+
+      - name: Transform source and CMake graphs for simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/apply_upstream_patches.sh upstream/SeriousSamClassic
+          python3 scripts/transform_sources_for_ios.py upstream/SeriousSamClassic
+          python3 scripts/transform_cmake_for_ios.py upstream/SeriousSamClassic
+          python3 scripts/inject_ios_platform_sources.py upstream/SeriousSamClassic
+          git -C upstream/SeriousSamClassic diff --check
+
+      - name: Configure arm64 simulator runtime graphs
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository_root=$(pwd)
+          for encounter in TFE TSE; do
+            build_dir="build/simulator/cmake/${encounter}"
+            source_dir="upstream/SeriousSamClassic/Sam${encounter}/Sources"
+            ecc="$repository_root/build/simulator/host-tools/${encounter}/bin/ecc-se"
+            cmake \
+              -S "$source_dir" \
+              -B "$build_dir" \
+              -G Xcode \
+              -DCMAKE_SYSTEM_NAME=iOS \
+              -DCMAKE_OSX_SYSROOT=iphonesimulator \
+              -DCMAKE_OSX_ARCHITECTURES=arm64 \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+              -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+              -DUSE_SYSTEM_SDL2=OFF \
+              -DUSE_SYSTEM_ZLIB=OFF \
+              -DUSE_ASM=OFF \
+              -DECC="$ecc" \
+              -DSERIOUSIOS_RUNTIME_ONLY=ON \
+              -DSERIOUSIOS_PLATFORM_ROOT="$repository_root/Sources/Platform/iOS" \
+              2>&1 | tee "build/simulator/${encounter}-configure.log"
+          done
+
+      - name: Compile simulator runtime archives
+        shell: bash
+        run: |
+          set -uo pipefail
+          overall_status=0
+          mkdir -p build/simulator/archive-evidence
+          for encounter in TFE TSE; do
+            bash scripts/build_ios_runtime_archives.sh \
+              "build/simulator/cmake/${encounter}" \
+              "$encounter" \
+              build/simulator/archive-evidence || overall_status=1
+          done
+          exit "$overall_status"
+
+      - name: Build simulator UIKit hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/simulator/host-evidence
+          for encounter in TFE TSE; do
+            bash scripts/build_ios_simulator_host.sh \
+              "build/simulator/cmake/${encounter}" \
+              "$encounter" \
+              "build/simulator/static-registries/SeriousIOS${encounter}EntityRegistry.cpp" \
+              "build/simulator/static-registries/SeriousIOS${encounter}RuntimeRegistry.cpp" \
+              build/simulator/host-evidence
+          done
+
+      - name: Boot available iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > build/simulator/available-devices.json
+          udid=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('build/simulator/available-devices.json').read_text())
+          candidates = []
+          for runtime, devices in payload.get('devices', {}).items():
+              if 'iOS' not in runtime:
+                  continue
+              for device in devices:
+                  if device.get('isAvailable') and 'iPhone' in device.get('name', ''):
+                      candidates.append(device)
+          if not candidates:
+              raise SystemExit('No available iPhone simulator device found')
+          candidates.sort(key=lambda item: ('Pro' not in item['name'], item['name']))
+          print(candidates[0]['udid'])
+          PY
+          )
+          echo "SERIOUSIOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid" >/dev/null 2>&1 || true
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: Run TFE and TSE core startup checkpoints
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p build/simulator/smoke-evidence
+          overall_status=0
+          for encounter in TFE TSE; do
+            bash scripts/run_ios_simulator_smoke.sh \
+              "$encounter" \
+              "build/simulator/host-evidence/SeriousIOS-${encounter}-Simulator.app" \
+              "$SERIOUSIOS_SIMULATOR_UDID" \
+              build/simulator/smoke-evidence || overall_status=1
+          done
+          exit "$overall_status"
+
+      - name: Shutdown simulator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${SERIOUSIOS_SIMULATOR_UDID:-}" ]]; then
+            xcrun simctl shutdown "$SERIOUSIOS_SIMULATOR_UDID" >/dev/null 2>&1 || true
+          fi
+
+      - name: Upload simulator startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seriousios-simulator-startup-${{ github.sha }}
+          path: |
+            build/simulator/*.log
+            build/simulator/*.json
+            build/simulator/static-registries
+            build/simulator/archive-evidence
+            build/simulator/host-evidence
+            build/simulator/smoke-evidence
+          if-no-files-found: warn
+          retention-days: 14

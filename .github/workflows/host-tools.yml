@@ -1,0 +1,292 @@
+name: SeriousiOS Host Tool Gate
+
+on:
+  push:
+    branches:
+      - main
+      - agent/**
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: seriousios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-generate-configure-and-compile:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout SeriousiOS
+        uses: actions/checkout@v4
+
+      - name: Load pinned revisions
+        shell: bash
+        run: cat Dependencies.lock >> "$GITHUB_ENV"
+
+      - name: Validate scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/build_host_tools.sh
+          bash -n scripts/smoke_generate_entities.sh
+          bash -n scripts/generate_all_sources.sh
+          bash -n scripts/apply_upstream_patches.sh
+          bash -n scripts/build_ios_runtime_archives.sh
+          bash -n scripts/dry_link_ios_runtime.sh
+          bash -n scripts/build_ios_uikit_host.sh
+          python3 -m py_compile scripts/report_dependency_graph.py
+          python3 -m py_compile scripts/generate_static_entity_registry.py
+          python3 -m py_compile scripts/generate_static_runtime_registry.py
+          python3 -m py_compile scripts/transform_sources_for_ios.py
+          python3 -m py_compile scripts/transform_cmake_for_ios.py
+          python3 -m py_compile scripts/inject_ios_platform_sources.py
+          python3 -m py_compile scripts/report_cmake_model.py
+          python3 -m py_compile scripts/report_ios_link.py
+
+      - name: Install generator dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install bison flex
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+
+      - name: Checkout pinned SeriousSamClassic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "$SERIOUSSAMCLASSIC_REPOSITORY" upstream/SeriousSamClassic
+          git -C upstream/SeriousSamClassic checkout --detach "$SERIOUSSAMCLASSIC_COMMIT"
+          test "$(git -C upstream/SeriousSamClassic rev-parse HEAD)" = "$SERIOUSSAMCLASSIC_COMMIT"
+
+      - name: Record upstream dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/report_dependency_graph.py \
+            upstream/SeriousSamClassic \
+            build/dependency-graph
+
+      - name: Build native Entity Class Compilers
+        shell: bash
+        env:
+          FLEX_BIN: /opt/homebrew/opt/flex/bin/flex
+          BISON_BIN: /opt/homebrew/opt/bison/bin/bison
+        run: |
+          set -euo pipefail
+          bash scripts/build_host_tools.sh upstream/SeriousSamClassic build/host-tools
+
+      - name: Generate representative TFE and TSE entities
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/smoke_generate_entities.sh \
+            upstream/SeriousSamClassic \
+            build/host-tools \
+            build/generated-smoke
+
+      - name: Generate complete TFE and TSE source corpus
+        shell: bash
+        env:
+          FLEX_BIN: /opt/homebrew/opt/flex/bin/flex
+          BISON_BIN: /opt/homebrew/opt/bison/bin/bison
+        run: |
+          set -euo pipefail
+          bash scripts/generate_all_sources.sh \
+            upstream/SeriousSamClassic \
+            build/host-tools \
+            build/generated-all
+
+      - name: Generate explicit static runtime registries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/static-registries
+          python3 scripts/generate_static_entity_registry.py \
+            build/generated-all/TFE \
+            TFE \
+            build/static-registries/SeriousIOSTFEEntityRegistry.cpp \
+            --upstream upstream/SeriousSamClassic \
+            --manifest build/static-registries/TFE-entities.json
+          python3 scripts/generate_static_entity_registry.py \
+            build/generated-all/TSE \
+            TSE \
+            build/static-registries/SeriousIOSTSEEntityRegistry.cpp \
+            --upstream upstream/SeriousSamClassic \
+            --manifest build/static-registries/TSE-entities.json
+          python3 scripts/generate_static_runtime_registry.py \
+            upstream/SeriousSamClassic \
+            TFE \
+            build/static-registries/SeriousIOSTFERuntimeRegistry.cpp \
+            --manifest build/static-registries/TFE-runtime.json
+          python3 scripts/generate_static_runtime_registry.py \
+            upstream/SeriousSamClassic \
+            TSE \
+            build/static-registries/SeriousIOSTSERuntimeRegistry.cpp \
+            --manifest build/static-registries/TSE-runtime.json
+
+          for source in build/static-registries/*.cpp; do
+            clang++ -std=c++17 -Wall -Wextra -Werror \
+              -I Sources/Platform/iOS \
+              -fsyntax-only "$source"
+          done
+
+      - name: Transform upstream source and CMake graphs for iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/cmake-model
+          bash scripts/apply_upstream_patches.sh upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/apply-patches.log
+
+          set +e
+          python3 scripts/transform_sources_for_ios.py upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/source-transform.log
+          source_status=${PIPESTATUS[0]}
+          python3 scripts/transform_cmake_for_ios.py upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/transform.log
+          cmake_status=${PIPESTATUS[0]}
+          python3 scripts/inject_ios_platform_sources.py upstream/SeriousSamClassic \
+            2>&1 | tee build/cmake-model/platform-injection.log
+          platform_status=${PIPESTATUS[0]}
+          set -e
+          if [[ $source_status -ne 0 || $cmake_status -ne 0 || $platform_status -ne 0 ]]; then
+            exit 1
+          fi
+
+          git -C upstream/SeriousSamClassic diff --check
+          git -C upstream/SeriousSamClassic diff --binary > build/cmake-model/seriousios-upstream.patch
+          git -C upstream/SeriousSamClassic status --short > build/cmake-model/upstream-status.txt
+
+      - name: Configure static arm64 iOS runtime graphs
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository_root=$(pwd)
+          for encounter in TFE TSE; do
+            build_dir="build/cmake-model/${encounter}"
+            source_dir="upstream/SeriousSamClassic/Sam${encounter}/Sources"
+            ecc="$repository_root/build/host-tools/${encounter}/bin/ecc-se"
+            mkdir -p "$build_dir/.cmake/api/v1/query"
+            : > "$build_dir/.cmake/api/v1/query/codemodel-v2"
+
+            cmake \
+              -S "$source_dir" \
+              -B "$build_dir" \
+              -G Xcode \
+              -DCMAKE_SYSTEM_NAME=iOS \
+              -DCMAKE_OSX_SYSROOT=iphoneos \
+              -DCMAKE_OSX_ARCHITECTURES=arm64 \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+              -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+              -DUSE_SYSTEM_SDL2=OFF \
+              -DUSE_SYSTEM_ZLIB=OFF \
+              -DUSE_ASM=OFF \
+              -DECC="$ecc" \
+              -DSERIOUSIOS_RUNTIME_ONLY=ON \
+              -DSERIOUSIOS_PLATFORM_ROOT="$repository_root/Sources/Platform/iOS" \
+              2>&1 | tee "build/cmake-model/${encounter}-configure.log"
+
+            python3 scripts/report_cmake_model.py \
+              "$build_dir" \
+              "$encounter" \
+              "build/cmake-model/${encounter}-codemodel.json"
+          done
+
+      - name: Compile all static arm64 iOS runtime archives
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p build/archive-evidence
+          overall_status=0
+          for encounter in TFE TSE; do
+            bash scripts/build_ios_runtime_archives.sh \
+              "build/cmake-model/${encounter}" \
+              "$encounter" \
+              build/archive-evidence || overall_status=1
+          done
+          exit "$overall_status"
+
+      - name: Force-load each encounter and require static link closure
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p build/link-evidence
+          overall_status=0
+          for encounter in TFE TSE; do
+            entity="build/static-registries/SeriousIOS${encounter}EntityRegistry.cpp"
+            runtime="build/static-registries/SeriousIOS${encounter}RuntimeRegistry.cpp"
+            driver_status=0
+            bash scripts/dry_link_ios_runtime.sh \
+              "build/cmake-model/${encounter}" \
+              "$encounter" \
+              "$entity" \
+              "$runtime" \
+              build/link-evidence || driver_status=$?
+            echo "$driver_status" > "build/link-evidence/${encounter}-driver-status.txt"
+
+            log="build/link-evidence/${encounter}-dry-link.log"
+            link_status="build/link-evidence/${encounter}-dry-link-status.txt"
+            if [[ ! -f "$log" ]]; then
+              echo "Dry-link driver failed before invoking the linker (status ${driver_status})." > "$log"
+              echo "$driver_status" > "$link_status"
+            fi
+            python3 scripts/report_ios_link.py \
+              "$log" \
+              "$encounter" \
+              "build/link-evidence/${encounter}-link-report.json" \
+              --status-file "$link_status" || overall_status=1
+          done
+          exit "$overall_status"
+
+      - name: Build UIKit and EAGL host shells
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/uikit-evidence
+          for encounter in TFE TSE; do
+            bash scripts/build_ios_uikit_host.sh \
+              "build/cmake-model/${encounter}" \
+              "$encounter" \
+              "build/static-registries/SeriousIOS${encounter}EntityRegistry.cpp" \
+              "build/static-registries/SeriousIOS${encounter}RuntimeRegistry.cpp" \
+              build/uikit-evidence
+          done
+
+      - name: Upload architecture, generation, compilation, link, and UIKit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seriousios-host-tools-${{ github.sha }}
+          path: |
+            build/dependency-graph
+            build/host-tools
+            build/generated-smoke
+            build/generated-all/full-generation-manifest.txt
+            build/generated-all/TFE/summary.txt
+            build/generated-all/TFE/generated.sha256
+            build/generated-all/TSE/summary.txt
+            build/generated-all/TSE/generated.sha256
+            build/static-registries
+            build/cmake-model/*.log
+            build/cmake-model/*.json
+            build/cmake-model/*.md
+            build/cmake-model/*.patch
+            build/cmake-model/upstream-status.txt
+            build/cmake-model/TFE/CMakeCache.txt
+            build/cmake-model/TFE/CMakeFiles/TargetDirectories.txt
+            build/cmake-model/TFE/SeriousEngine.xcodeproj/project.pbxproj
+            build/cmake-model/TSE/CMakeCache.txt
+            build/cmake-model/TSE/CMakeFiles/TargetDirectories.txt
+            build/cmake-model/TSE/SeriousEngine.xcodeproj/project.pbxproj
+            build/archive-evidence
+            build/link-evidence
+            build/uikit-evidence
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 5 ]]; then
+  echo "usage: $0 <CMake build dir> <TFE|TSE> <entity registry.cpp> <runtime registry.cpp> <evidence dir>" >&2
+  exit 64
+fi
+
+BUILD_DIR=$(cd "$1" && pwd)
+ENCOUNTER=$2
+ENTITY_REGISTRY=$(cd "$(dirname "$3")" && pwd)/$(basename "$3")
+RUNTIME_REGISTRY=$(cd "$(dirname "$4")" && pwd)/$(basename "$4")
+EVIDENCE=$5
+mkdir -p "$EVIDENCE"
+EVIDENCE=$(cd "$EVIDENCE" && pwd)
+REPOSITORY_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+PLATFORM_ROOT="$REPOSITORY_ROOT/Sources/Platform/iOS"
+APP_SOURCE="$REPOSITORY_ROOT/Sources/App/iOS/SeriousIOSHost.mm"
+BUILD_IDENTIFIER=${GITHUB_SHA:-local}
+
+case "$ENCOUNTER" in
+  TFE)
+    define=SERIOUSIOS_TFE
+    display_name="Serious Sam: The First Encounter"
+    bundle_id="com.arjunkl.seriousios.tfe"
+    archives=(engine_safemath Engine Game Shaders Entities SeriousIOSApplication)
+    ;;
+  TSE)
+    define=SERIOUSIOS_TSE
+    display_name="Serious Sam: The Second Encounter"
+    bundle_id="com.arjunkl.seriousios.tse"
+    archives=(engine_safemathMP EngineMP GameMP ShadersMP EntitiesMP SeriousIOSApplicationMP)
+    ;;
+  *)
+    echo "encounter must be TFE or TSE" >&2
+    exit 64
+    ;;
+esac
+
+SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+CXX=$(xcrun --sdk iphoneos --find clang++)
+OBJECT_DIR="$EVIDENCE/${ENCOUNTER}-objects"
+APP_DIR="$EVIDENCE/SeriousIOS-${ENCOUNTER}.app"
+EXECUTABLE="SeriousIOS-${ENCOUNTER}"
+mkdir -p "$OBJECT_DIR" "$APP_DIR"
+
+DIAGNOSTIC_APP_SOURCE="$OBJECT_DIR/SeriousIOSHost-Diagnostic.mm"
+cp "$APP_SOURCE" "$DIAGNOSTIC_APP_SOURCE"
+python3 "$REPOSITORY_ROOT/scripts/transform_ios_host_for_diagnostics.py" \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  --build-id "$BUILD_IDENTIFIER" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-diagnostic-host-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_consolidated_diagnostics.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-consolidated-diagnostics-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_game_data_import.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-game-data-import-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_menu_touch.py" \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-menu-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_analog_touch.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-analog-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_netricsa_touch.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-netricsa-touch-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_touch_customization.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-touch-customization-transform.log"
+python3 "$REPOSITORY_ROOT/scripts/inject_ios_touch_input_fixes.py" \
+  --self-test \
+  "$DIAGNOSTIC_APP_SOURCE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-touch-input-fixes-transform.log"
+
+grep -Fq '[self hasCompleteGameData]' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'Levels/01_Hatshepsut.wld' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'gro_copied=%lu levels_copied=%lu' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'Import original game data' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS-diagnostics-report.txt' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'initWithActivityItems:@[reportURL]' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS_ApplicationComputerActive()' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS_SetVirtualMovement((float)forward, (float)right)' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'radialDeadZone = 0.16' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SERIOUSIOS_ACTION_FIRE' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq '#import <CoreMotion/CoreMotion.h>' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'controls_editor_opened' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS.GyroSensitivity' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'SeriousIOS.TouchAimSensitivity' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'pauseButtonLongPressed:' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'symbol:@"scope"' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'button.exclusiveTouch = NO;' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'const double accumulatedX = -yawRate * deltaTime' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'const double accumulatedY = -pitchRate * deltaTime' "$DIAGNOSTIC_APP_SOURCE"
+grep -Fq 'axis_sign=-1' "$DIAGNOSTIC_APP_SOURCE"
+if grep -Eq "SeriousIOS_QueueSDLKey\('[wsad]'" "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still contains digital WASD movement" >&2
+  exit 1
+fi
+if grep -Fq 'button.exclusiveTouch = YES;' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still prevents simultaneous gameplay touches" >&2
+  exit 1
+fi
+if grep -Fq 'initWithActivityItems:files' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still contains multi-file diagnostic export" >&2
+  exit 1
+fi
+if grep -Fq 'Import original .gro files' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still contains obsolete importer wording" >&2
+  exit 1
+fi
+if grep -Fq 'setTitle:(computerActive ? @"EXIT" : @"PAUSE")' "$DIAGNOSTIC_APP_SOURCE"; then
+  echo "generated host still contains text gameplay placeholders" >&2
+  exit 1
+fi
+
+common_compile=(
+  -target arm64-apple-ios15.0
+  -isysroot "$SDK_PATH"
+  -std=c++17
+  -fms-extensions
+  -Wall -Wextra -Werror
+  -Wno-unused-parameter
+  -Wno-deprecated-declarations
+  -I "$PLATFORM_ROOT"
+)
+
+"$CXX" "${common_compile[@]}" \
+  -fobjc-arc \
+  -D"$define" \
+  -x objective-c++ \
+  -c "$DIAGNOSTIC_APP_SOURCE" \
+  -o "$OBJECT_DIR/uikit-host.o"
+"$CXX" "${common_compile[@]}" \
+  -c "$ENTITY_REGISTRY" \
+  -o "$OBJECT_DIR/entity-registry.o"
+"$CXX" "${common_compile[@]}" \
+  -c "$RUNTIME_REGISTRY" \
+  -o "$OBJECT_DIR/runtime-registry.o"
+"$CXX" "${common_compile[@]}" \
+  -c "$PLATFORM_ROOT/SeriousIOSHostGlobals.cpp" \
+  -o "$OBJECT_DIR/host-globals.o"
+
+archive_arguments=()
+for target in "${archives[@]}"; do
+  archive="$BUILD_DIR/Release-iphoneos/lib${target}.a"
+  if [[ ! -s "$archive" ]]; then
+    echo "missing archive: $archive" >&2
+    exit 1
+  fi
+  archive_arguments+=("-Wl,-force_load,$archive")
+done
+
+"$CXX" \
+  -target arm64-apple-ios15.0 \
+  -isysroot "$SDK_PATH" \
+  "$OBJECT_DIR/uikit-host.o" \
+  "$OBJECT_DIR/entity-registry.o" \
+  "$OBJECT_DIR/runtime-registry.o" \
+  "$OBJECT_DIR/host-globals.o" \
+  "${archive_arguments[@]}" \
+  -Wl,-dead_strip \
+  -framework Foundation \
+  -framework UIKit \
+  -framework UniformTypeIdentifiers \
+  -framework CoreFoundation \
+  -framework CoreGraphics \
+  -framework QuartzCore \
+  -framework OpenGLES \
+  -framework AudioToolbox \
+  -framework AVFoundation \
+  -framework CoreMotion \
+  -framework GameController \
+  -framework Security \
+  -framework SystemConfiguration \
+  -o "$APP_DIR/$EXECUTABLE" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-uikit-link.log"
+
+bash "$REPOSITORY_ROOT/scripts/install_ios_app_icons.sh" "$APP_DIR" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-app-icons.txt"
+
+cat > "$APP_DIR/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>${display_name}</string>
+  <key>CFBundleExecutable</key>
+  <string>${EXECUTABLE}</string>
+  <key>CFBundleIdentifier</key>
+  <string>${bundle_id}</string>
+  <key>CFBundleIconFiles</key>
+  <array>
+    <string>Icon-60</string>
+  </array>
+  <key>CFBundleIcons</key>
+  <dict>
+    <key>CFBundlePrimaryIcon</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>Icon-60</string>
+      </array>
+      <key>UIPrerenderedIcon</key>
+      <false/>
+    </dict>
+  </dict>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>SeriousIOS</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSRequiresIPhoneOS</key>
+  <true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <true/>
+  <key>MinimumOSVersion</key>
+  <string>15.0</string>
+  <key>NSMotionUsageDescription</key>
+  <string>SeriousiOS uses device motion only for optional gyro aiming.</string>
+  <key>UIFileSharingEnabled</key>
+  <true/>
+  <key>UILaunchScreen</key>
+  <dict/>
+  <key>UIRequiresFullScreen</key>
+  <true/>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+</dict>
+</plist>
+PLIST
+
+plutil -lint "$APP_DIR/Info.plist" | tee "$EVIDENCE/${ENCOUNTER}-plist.txt"
+file_sharing=$(plutil -extract UIFileSharingEnabled raw -o - "$APP_DIR/Info.plist")
+open_in_place=$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$APP_DIR/Info.plist")
+motion_usage=$(plutil -extract NSMotionUsageDescription raw -o - "$APP_DIR/Info.plist")
+primary_icon=$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconFiles.0 raw -o - "$APP_DIR/Info.plist")
+if [[ "$file_sharing" != "true" || "$open_in_place" != "true" || -z "$motion_usage" || "$primary_icon" != "Icon-60" ]]; then
+  echo "generated Info.plist does not expose documents, declare gyro usage, and register the app icon" >&2
+  exit 1
+fi
+if [[ ! -s "$APP_DIR/Icon-60@2x.png" || ! -s "$APP_DIR/Icon-60@3x.png" ]]; then
+  echo "generated app bundle is missing required app icon PNGs" >&2
+  exit 1
+fi
+{
+  echo "UIFileSharingEnabled=$file_sharing"
+  echo "LSSupportsOpeningDocumentsInPlace=$open_in_place"
+  echo "NSMotionUsageDescription=$motion_usage"
+  echo "CFBundlePrimaryIcon=$primary_icon"
+} | tee "$EVIDENCE/${ENCOUNTER}-file-sharing-motion-and-icon-plist.txt"
+
+if find "$APP_DIR" -type f \( -iname '*.gro' -o -iname '*.wld' \) -print -quit | grep -q .; then
+  echo "copyrighted game data entered the generated app bundle" >&2
+  exit 1
+fi
+
+file "$APP_DIR/$EXECUTABLE" | tee "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
+shasum -a 256 "$APP_DIR/$EXECUTABLE" | tee -a "$EVIDENCE/${ENCOUNTER}-uikit-product.txt"
+otool -L "$APP_DIR/$EXECUTABLE" > "$EVIDENCE/${ENCOUNTER}-uikit-linked-frameworks.txt"
+
+bash "$REPOSITORY_ROOT/scripts/package_unsigned_ipa.sh" \
+  "$ENCOUNTER" \
+  "$APP_DIR" \
+  "$EVIDENCE"
+
+IPA="$EVIDENCE/SeriousIOS-${ENCOUNTER}-unsigned.ipa"
+PACKAGED_PLIST="$OBJECT_DIR/Packaged-Info.plist"
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Info.plist" > "$PACKAGED_PLIST"
+plutil -lint "$PACKAGED_PLIST" >/dev/null
+test "$(plutil -extract UIFileSharingEnabled raw -o - "$PACKAGED_PLIST")" = "true"
+test "$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$PACKAGED_PLIST")" = "true"
+test -n "$(plutil -extract NSMotionUsageDescription raw -o - "$PACKAGED_PLIST")"
+test "$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconFiles.0 raw -o - "$PACKAGED_PLIST")" = "Icon-60"
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@2x.png" | shasum -a 256 | grep -Fq '689a9486c1193536350f12c95c2375cc19682107f6b640b4829f65d7ce0fba9c'
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@3x.png" | shasum -a 256 | grep -Fq 'a5888eb1a5f02a0aed3b86ca909dd63c8ac1bcc8c0c550da81b5a1bba68a7c8d'
+if unzip -Z1 "$IPA" | grep -Eiq '\.(gro|wld)$'; then
+  echo "copyrighted game data entered the packaged IPA" >&2
+  exit 1
+fi

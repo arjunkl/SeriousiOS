@@ -1,0 +1,48 @@
+diff --git a/SamTFE/Sources/Engine/Base/ErrorReporting.cpp b/SamTFE/Sources/Engine/Base/ErrorReporting.cpp
+--- a/SamTFE/Sources/Engine/Base/ErrorReporting.cpp
++++ b/SamTFE/Sources/Engine/Base/ErrorReporting.cpp
+@@ -18,6 +18,9 @@ This program is free software; you can redistribute it and/or modify
+ #include "Engine/StdH.h"
+ 
+ #include <Engine/Base/ErrorReporting.h>
++#ifdef PLATFORM_IOS
++#include "SeriousIOSApplicationLifecycle.h"
++#endif
+ #include <Engine/Base/ErrorTable.h>
+ #include <Engine/Base/Translation.h>
+ 
+@@ -73,6 +76,10 @@ void FatalError(const char *strFormat, ...)
+   CTString strBuffer;
+   strBuffer.VPrintF(strFormat, arg);
+   va_end(arg);
++
++#ifdef PLATFORM_IOS
++  SeriousIOS_ApplicationRecordFatalError((const char *)strBuffer);
++#endif
+ 
+   if (_pConsole!=NULL) {
+     // print the buffer to the console
+diff --git a/SamTSE/Sources/Engine/Base/ErrorReporting.cpp b/SamTSE/Sources/Engine/Base/ErrorReporting.cpp
+--- a/SamTSE/Sources/Engine/Base/ErrorReporting.cpp
++++ b/SamTSE/Sources/Engine/Base/ErrorReporting.cpp
+@@ -18,6 +18,9 @@ This program is free software; you can redistribute it and/or modify
+ #include "Engine/StdH.h"
+ 
+ #include <Engine/Base/ErrorReporting.h>
++#ifdef PLATFORM_IOS
++#include "SeriousIOSApplicationLifecycle.h"
++#endif
+ #include <Engine/Base/ErrorTable.h>
+ #include <Engine/Base/Translation.h>
+ 
+@@ -73,6 +76,10 @@ void FatalError(const char *strFormat, ...)
+   CTString strBuffer;
+   strBuffer.VPrintF(strFormat, arg);
+   va_end(arg);
++
++#ifdef PLATFORM_IOS
++  SeriousIOS_ApplicationRecordFatalError((const char *)strBuffer);
++#endif
+ 
+   if (_pConsole!=NULL) {
+     // print the buffer to the console
