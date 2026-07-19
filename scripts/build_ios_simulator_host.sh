@@ -167,6 +167,9 @@ done
   -o "$APP_DIR/$EXECUTABLE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-simulator-link.log"
 
+bash "$REPOSITORY_ROOT/scripts/install_ios_app_icons.sh" "$APP_DIR" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-simulator-app-icons.txt"
+
 cat > "$APP_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -180,6 +183,22 @@ cat > "$APP_DIR/Info.plist" <<PLIST
   <string>${EXECUTABLE}</string>
   <key>CFBundleIdentifier</key>
   <string>${bundle_id}</string>
+  <key>CFBundleIconFiles</key>
+  <array>
+    <string>Icon-60</string>
+  </array>
+  <key>CFBundleIcons</key>
+  <dict>
+    <key>CFBundlePrimaryIcon</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>Icon-60</string>
+      </array>
+      <key>UIPrerenderedIcon</key>
+      <false/>
+    </dict>
+  </dict>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -217,6 +236,9 @@ PLIST
 
 plutil -lint "$APP_DIR/Info.plist" | tee "$EVIDENCE/${ENCOUNTER}-simulator-plist.txt"
 test -n "$(plutil -extract NSMotionUsageDescription raw -o - "$APP_DIR/Info.plist")"
+test "$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconFiles.0 raw -o - "$APP_DIR/Info.plist")" = "Icon-60"
+test -s "$APP_DIR/Icon-60@2x.png"
+test -s "$APP_DIR/Icon-60@3x.png"
 codesign --force --sign - "$APP_DIR"
 file "$APP_DIR/$EXECUTABLE" | tee "$EVIDENCE/${ENCOUNTER}-simulator-product.txt"
 shasum -a 256 "$APP_DIR/$EXECUTABLE" | tee -a "$EVIDENCE/${ENCOUNTER}-simulator-product.txt"
