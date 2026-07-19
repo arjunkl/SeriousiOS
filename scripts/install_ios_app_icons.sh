@@ -8,28 +8,18 @@ fi
 
 APP_DIR=$1
 REPOSITORY_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ASSET_ROOT="$REPOSITORY_ROOT/Assets"
 
 if [[ ! -d "$APP_DIR" ]]; then
   echo "app bundle does not exist: $APP_DIR" >&2
   exit 1
 fi
 
+python3 "$REPOSITORY_ROOT/scripts/generate_ios_app_icons.py" "$APP_DIR"
+
 ICON_2X="$APP_DIR/Icon-60@2x.png"
 ICON_3X="$APP_DIR/Icon-60@3x.png"
-
-tr -d '\r\n' < "$ASSET_ROOT/Icon-60@2x.png.base64" \
-  | /usr/bin/base64 -D > "$ICON_2X"
-
-{
-  cat "$ASSET_ROOT/Icon-60@3x.part1.base64"
-  cat "$ASSET_ROOT/Icon-60@3x.part2.base64"
-  cat "$ASSET_ROOT/Icon-60@3x.part3.base64"
-  cat "$ASSET_ROOT/Icon-60@3x.part4.base64"
-} | tr -d '\r\n' | /usr/bin/base64 -D > "$ICON_3X"
-
-EXPECTED_2X="97e95a8d02acb5a77fe04b1cb8290a9afcccd2bf40e3808cfc5bfb70bd76ffb0"
-EXPECTED_3X="d5967f08623e0d56b78dfe2df37a116932a38c873bf059b65dd7c8e9dcf06d4c"
+EXPECTED_2X="689a9486c1193536350f12c95c2375cc19682107f6b640b4829f65d7ce0fba9c"
+EXPECTED_3X="a5888eb1a5f02a0aed3b86ca909dd63c8ac1bcc8c0c550da81b5a1bba68a7c8d"
 ACTUAL_2X=$(shasum -a 256 "$ICON_2X" | awk '{print $1}')
 ACTUAL_3X=$(shasum -a 256 "$ICON_3X" | awk '{print $1}')
 
