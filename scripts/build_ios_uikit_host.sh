@@ -288,8 +288,8 @@ test "$(plutil -extract UIFileSharingEnabled raw -o - "$PACKAGED_PLIST")" = "tru
 test "$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$PACKAGED_PLIST")" = "true"
 test -n "$(plutil -extract NSMotionUsageDescription raw -o - "$PACKAGED_PLIST")"
 test "$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconFiles.0 raw -o - "$PACKAGED_PLIST")" = "Icon-60"
-unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@2x.png" | shasum -a 256 | grep -Fq '97e95a8d02acb5a77fe04b1cb8290a9afcccd2bf40e3808cfc5bfb70bd76ffb0'
-unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@3x.png" | shasum -a 256 | grep -Fq 'd5967f08623e0d56b78dfe2df37a116932a38c873bf059b65dd7c8e9dcf06d4c'
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@2x.png" | shasum -a 256 | grep -Fq '689a9486c1193536350f12c95c2375cc19682107f6b640b4829f65d7ce0fba9c'
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@3x.png" | shasum -a 256 | grep -Fq 'a5888eb1a5f02a0aed3b86ca909dd63c8ac1bcc8c0c550da81b5a1bba68a7c8d'
 if unzip -Z1 "$IPA" | grep -Eiq '\.(gro|wld)$'; then
   echo "copyrighted game data entered the packaged IPA" >&2
   exit 1
