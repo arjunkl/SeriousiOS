@@ -181,6 +181,9 @@ done
   -o "$APP_DIR/$EXECUTABLE" \
   2>&1 | tee "$EVIDENCE/${ENCOUNTER}-uikit-link.log"
 
+bash "$REPOSITORY_ROOT/scripts/install_ios_app_icons.sh" "$APP_DIR" \
+  2>&1 | tee "$EVIDENCE/${ENCOUNTER}-app-icons.txt"
+
 cat > "$APP_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -194,6 +197,22 @@ cat > "$APP_DIR/Info.plist" <<PLIST
   <string>${EXECUTABLE}</string>
   <key>CFBundleIdentifier</key>
   <string>${bundle_id}</string>
+  <key>CFBundleIconFiles</key>
+  <array>
+    <string>Icon-60</string>
+  </array>
+  <key>CFBundleIcons</key>
+  <dict>
+    <key>CFBundlePrimaryIcon</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>Icon-60</string>
+      </array>
+      <key>UIPrerenderedIcon</key>
+      <false/>
+    </dict>
+  </dict>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -231,15 +250,21 @@ plutil -lint "$APP_DIR/Info.plist" | tee "$EVIDENCE/${ENCOUNTER}-plist.txt"
 file_sharing=$(plutil -extract UIFileSharingEnabled raw -o - "$APP_DIR/Info.plist")
 open_in_place=$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$APP_DIR/Info.plist")
 motion_usage=$(plutil -extract NSMotionUsageDescription raw -o - "$APP_DIR/Info.plist")
-if [[ "$file_sharing" != "true" || "$open_in_place" != "true" || -z "$motion_usage" ]]; then
-  echo "generated Info.plist does not expose documents and declare gyro usage" >&2
+primary_icon=$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconFiles.0 raw -o - "$APP_DIR/Info.plist")
+if [[ "$file_sharing" != "true" || "$open_in_place" != "true" || -z "$motion_usage" || "$primary_icon" != "Icon-60" ]]; then
+  echo "generated Info.plist does not expose documents, declare gyro usage, and register the app icon" >&2
+  exit 1
+fi
+if [[ ! -s "$APP_DIR/Icon-60@2x.png" || ! -s "$APP_DIR/Icon-60@3x.png" ]]; then
+  echo "generated app bundle is missing required app icon PNGs" >&2
   exit 1
 fi
 {
   echo "UIFileSharingEnabled=$file_sharing"
   echo "LSSupportsOpeningDocumentsInPlace=$open_in_place"
   echo "NSMotionUsageDescription=$motion_usage"
-} | tee "$EVIDENCE/${ENCOUNTER}-file-sharing-and-motion-plist.txt"
+  echo "CFBundlePrimaryIcon=$primary_icon"
+} | tee "$EVIDENCE/${ENCOUNTER}-file-sharing-motion-and-icon-plist.txt"
 
 if find "$APP_DIR" -type f \( -iname '*.gro' -o -iname '*.wld' \) -print -quit | grep -q .; then
   echo "copyrighted game data entered the generated app bundle" >&2
@@ -262,6 +287,9 @@ plutil -lint "$PACKAGED_PLIST" >/dev/null
 test "$(plutil -extract UIFileSharingEnabled raw -o - "$PACKAGED_PLIST")" = "true"
 test "$(plutil -extract LSSupportsOpeningDocumentsInPlace raw -o - "$PACKAGED_PLIST")" = "true"
 test -n "$(plutil -extract NSMotionUsageDescription raw -o - "$PACKAGED_PLIST")"
+test "$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconFiles.0 raw -o - "$PACKAGED_PLIST")" = "Icon-60"
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@2x.png" | shasum -a 256 | grep -Fq '97e95a8d02acb5a77fe04b1cb8290a9afcccd2bf40e3808cfc5bfb70bd76ffb0'
+unzip -p "$IPA" "Payload/SeriousIOS-${ENCOUNTER}.app/Icon-60@3x.png" | shasum -a 256 | grep -Fq 'd5967f08623e0d56b78dfe2df37a116932a38c873bf059b65dd7c8e9dcf06d4c'
 if unzip -Z1 "$IPA" | grep -Eiq '\.(gro|wld)$'; then
   echo "copyrighted game data entered the packaged IPA" >&2
   exit 1
